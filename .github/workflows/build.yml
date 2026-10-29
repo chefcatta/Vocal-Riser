@@ -2,6 +2,7 @@ name: Build Vocal Riser
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -26,6 +27,8 @@ jobs:
           mkdir -p dist
           cp -R "build/VocalRiser_artefacts/Release/AU/Vocal Riser.component" dist/
           cp -R "build/VocalRiser_artefacts/Release/VST3/Vocal Riser.vst3" dist/
+          codesign --force --deep --sign - "dist/Vocal Riser.component"
+          codesign --force --deep --sign - "dist/Vocal Riser.vst3"
           cd dist && zip -r -y ../VocalRiser-mac.zip .
 
       - name: Impacchetta (Windows)
@@ -37,3 +40,27 @@ jobs:
         with:
           name: VocalRiser-${{ runner.os }}
           path: VocalRiser-*.zip
+
+  # Copia i plugin compilati nel branch "plugin" del repository,
+  # così si scaricano direttamente da GitHub
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Pubblica nel branch "plugin"
+        run: |
+          cd out
+          ls -la
+          git init -q -b plugin
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Plugin compilato (${GITHUB_SHA::7})"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" plugin
