@@ -411,22 +411,24 @@ void ArrowSelector::paint (juce::Graphics& g)
 
 //==============================================================================
 // Griglia di forellini incisi nel pannello (decorazione)
-static void drawDotGrid (juce::Graphics& g, juce::Point<float> origin, int cols, int rows, float spacing, float dir = 1.0f)
+static void drawDot (juce::Graphics& g, float x, float y)
 {
-    for (int rI = 0; rI < rows; ++rI)
-        for (int cI = 0; cI < cols; ++cI)
-        {
-            const float x = origin.x + dir * (float) cI * spacing;
-            const float y = origin.y + (float) rI * spacing;
-            const float rad = 1.9f;
-            g.setColour (juce::Colours::black.withAlpha (0.7f));                 // ombra sotto il puntino
-            g.fillEllipse (x - rad, y - rad + 1.0f, rad * 2.0f, rad * 2.0f);
-            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff8a8f99), x, y - rad,
-                                                     juce::Colour (0xff4e525a), x, y + rad, false));
-            g.fillEllipse (x - rad, y - rad, rad * 2.0f, rad * 2.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.35f));               // riflesso
-            g.fillEllipse (x - rad * 0.45f, y - rad * 0.7f, rad * 0.8f, rad * 0.6f);
-        }
+    const float rad = 1.6f;
+    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.fillEllipse (x - rad, y - rad + 0.9f, rad * 2.0f, rad * 2.0f);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff666a73), x, y - rad,
+                                             juce::Colour (0xff3a3d43), x, y + rad, false));
+    g.fillEllipse (x - rad, y - rad, rad * 2.0f, rad * 2.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.14f));
+    g.fillEllipse (x - rad * 0.4f, y - rad * 0.65f, rad * 0.7f, rad * 0.5f);
+}
+
+// Gruppo a triangolo (3-2-1) che punta verso l'angolo indicato da dx/dy (+1 o -1)
+static void drawDotCorner (juce::Graphics& g, juce::Point<float> corner, float dx, float dy, float sp = 8.0f)
+{
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 3 - row; ++col)
+            drawDot (g, corner.x + dx * (float) col * sp, corner.y + dy * (float) row * sp);
 }
 
 //==============================================================================
@@ -582,18 +584,6 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
                                              juce::Colours::white.withAlpha (0.03f), kc.x, kc.y + kr, false));
     g.fillEllipse (kc.x - kr, kc.y - kr, kr * 2.0f, kr * 2.0f);
 
-    // Durante il loop, un sottile anello di avanzamento lungo il bordo dell'incavo
-    if (proc.previewPlaying.load())
-    {
-        const float pr = notchRadius - 5.0f;
-        const float a0 = -juce::MathConstants<float>::halfPi * 1.0f, span = juce::MathConstants<float>::pi;
-        juce::Path ring;
-        ring.addCentredArc (kc.x, kc.y, pr, pr, 0.0f, a0, a0 + span * proc.previewProgress.load(), true);
-        g.setColour (Colours::accent.withAlpha (0.35f));
-        g.strokePath (ring, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        g.setColour (Colours::accent2);
-        g.strokePath (ring, juce::PathStrokeType (1.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    }
 
     // Valore intensita
     // sotto l'alloggiamento della manopola, impaginato come gli altri selettori
@@ -621,19 +611,15 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white.withAlpha (0.04f));
     g.fillRect (shellR.getX() + 40.0f, sepY + 1.0f, shellR.getWidth() - 80.0f, 1.0f);
 
-    // Forellini decorativi negli spazi vuoti ai lati della manopola e in fondo
+    // Puntini decorativi agli angoli della sezione centrale
     {
-        const float sp = 8.0f;
         const float lx = shellR.getX() + 22.0f, rx = shellR.getRight() - 22.0f;
         const float topY = (float) displayArea.getBottom() + 22.0f;
-        const float lowY = (float) intensityArea.getBottom() - 14.0f;
-        drawDotGrid (g, { lx, topY }, 3, 2, sp,  1.0f);
-        drawDotGrid (g, { rx, topY }, 3, 2, sp, -1.0f);
-        drawDotGrid (g, { lx, lowY }, 3, 2, sp,  1.0f);
-        drawDotGrid (g, { rx, lowY }, 3, 2, sp, -1.0f);
-        const float footY = shellR.getBottom() - 24.0f;
-        drawDotGrid (g, { lx, footY }, 3, 2, sp,  1.0f);
-        drawDotGrid (g, { rx, footY }, 3, 2, sp, -1.0f);
+        const float lowY = (float) intensityArea.getBottom();
+        drawDotCorner (g, { lx, topY },  1.0f,  1.0f);
+        drawDotCorner (g, { rx, topY }, -1.0f,  1.0f);
+        drawDotCorner (g, { lx, lowY },  1.0f, -1.0f);
+        drawDotCorner (g, { rx, lowY }, -1.0f, -1.0f);
     }
 
     // Firma dello sviluppatore
