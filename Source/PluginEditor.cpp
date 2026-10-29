@@ -372,7 +372,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     : AudioProcessorEditor (&p), proc (p), wave (p),
       lengthSel (*p.apvts.getParameter ("length"), "DURATA", { "1/4 BAR", "1/2 BAR", "1 BAR", "2 BAR" }),
       reverbSel (*p.apvts.getParameter ("revType"), "RIVERBERO", { "HALL", "PLATE", "SPACE" }),
-      timingSel (*p.apvts.getParameter ("stutRate"), "TIMING STUTTER", { "1/4", "1/8", "1/16", "1/32" })
+      timingSel (*p.apvts.getParameter ("stutRate"), "TIMING STUTTER", { "1/4", "1/8", "1/16" })
 {
     setLookAndFeel (&lnf);
     auto& apvts = proc.apvts;

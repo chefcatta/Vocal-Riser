@@ -140,7 +140,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout VocalRiserAudioProcessor::cr
                                                          StringArray { "Hall", "Plate", "Space" }, 0));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stereoOn", 1 }, "Mono -> Stereo", false));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "stutRate", 1 }, "Timing Stutter",
-                                                         StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
+                                                         StringArray { "1/4", "1/8", "1/16" }, 2));
 
     return { p.begin(), p.end() };
 }
@@ -445,8 +445,8 @@ void VocalRiserAudioProcessor::renderRiser()
     const float fMax     = 200.0f * std::pow (10.0f, amount);   // 200 Hz -> 2 kHz
     const float volRange = 4.0f + 14.0f * amount;
     const float gateCoeff = 1.0f - std::exp (-1.0f / (0.0015f * (float) rate));
-    static constexpr double stutDiv[] = { 1.0, 0.5, 0.25, 0.125 };   // 1/4, 1/8, 1/16, 1/32
-    const double stutPeriod = secPerBeat * rate * stutDiv[jlimit (0, 3, (int) pStutRate->load())];
+    static constexpr double stutDiv[] = { 1.0, 0.5, 0.25 };   // 1/4, 1/8, 1/16
+    const double stutPeriod = secPerBeat * rate * stutDiv[jlimit (0, 2, (int) pStutRate->load())];
     float gate = 1.0f;
 
     for (int j = 0; j < Ls; ++j)
