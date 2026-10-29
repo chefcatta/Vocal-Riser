@@ -418,11 +418,14 @@ static void drawDotGrid (juce::Graphics& g, juce::Point<float> origin, int cols,
         {
             const float x = origin.x + dir * (float) cI * spacing;
             const float y = origin.y + (float) rI * spacing;
-            const float rad = 1.5f;
-            g.setColour (juce::Colours::white.withAlpha (0.07f));               // bordo illuminato in basso
-            g.fillEllipse (x - rad, y - rad + 0.8f, rad * 2.0f, rad * 2.0f);
-            g.setColour (juce::Colour (0xff08090b));                             // foro
+            const float rad = 1.9f;
+            g.setColour (juce::Colours::black.withAlpha (0.7f));                 // ombra sotto il puntino
+            g.fillEllipse (x - rad, y - rad + 1.0f, rad * 2.0f, rad * 2.0f);
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff8a8f99), x, y - rad,
+                                                     juce::Colour (0xff4e525a), x, y + rad, false));
             g.fillEllipse (x - rad, y - rad, rad * 2.0f, rad * 2.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.35f));               // riflesso
+            g.fillEllipse (x - rad * 0.45f, y - rad * 0.7f, rad * 0.8f, rad * 0.6f);
         }
 }
 
