@@ -47,6 +47,7 @@ public:
     void armCapture()               { captureState.store (stateArmed); }
     int  getCaptureState() const    { return captureState.load(); }
     bool hasCapture() const         { return captureCounter.load() > 0; }
+    int  getSourceStereo() const    { return sourceStereo.load(); } // -1 = nessuna cattura, 0 = mono, 1 = stereo
 
     //== Render (solo message thread) ===========================================
     bool updateRender();                 // true se ha appena renderizzato
@@ -68,6 +69,7 @@ private:
     std::atomic<float>* pAmount = nullptr;  std::atomic<float>* pLength = nullptr;
     std::atomic<float>* pFilterOn = nullptr; std::atomic<float>* pStutOn = nullptr;
     std::atomic<float>* pPhoneOn = nullptr;  std::atomic<float>* pChorusOn = nullptr;
+    std::atomic<float>* pRevType = nullptr;  std::atomic<float>* pStereoOn = nullptr;
 
     double sr = 44100.0;
 
@@ -94,6 +96,7 @@ private:
     bool renderReady = false;
     int lastRenderedCounter = 0;
     std::atomic<bool> paramsDirty { false };
+    std::atomic<int>  sourceStereo { -1 };
 
     // Anteprima
     juce::SpinLock previewLock;

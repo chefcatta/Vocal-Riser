@@ -1,11 +1,13 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "RiserReverbs.h"
 
 namespace
 {
     const double      beatsTable[]  = { 1.0, 2.0, 4.0, 8.0 };            // 1/4, 1/2, 1, 2 battute (4/4)
     const char* const lengthNames[] = { "1-4bar", "1-2bar", "1bar", "2bar" };
-    const char* const renderParams[] = { "amount", "length", "filterOn", "stutOn", "phoneOn", "chorusOn" };
+    const char* const renderParams[] = { "amount", "length", "filterOn", "stutOn", "phoneOn", "chorusOn",
+                                         "revType", "stereoOn" };
     constexpr float thresholdGain = 0.0056f; // ~ -45 dBFS
 
     // Trova dove finisce la prima parola: l'inviluppo scende sotto -12 dB
@@ -105,6 +107,8 @@ VocalRiserAudioProcessor::VocalRiserAudioProcessor()
     pStutOn   = apvts.getRawParameterValue ("stutOn");
     pPhoneOn  = apvts.getRawParameterValue ("phoneOn");
     pChorusOn = apvts.getRawParameterValue ("chorusOn");
+    pRevType  = apvts.getRawParameterValue ("revType");
+    pStereoOn = apvts.getRawParameterValue ("stereoOn");
 
     for (auto* id : renderParams)
         apvts.addParameterListener (id, this);
@@ -131,6 +135,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout VocalRiserAudioProcessor::cr
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stutOn", 1 },   "Stutter", true));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "phoneOn", 1 },  "Phone",   false));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "chorusOn", 1 }, "Chorus",  false));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "revType", 1 }, "Riverbero",
+                                                         StringArray { "Hall", "Plate", "Space" }, 0));
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stereoOn", 1 }, "Mono -> Stereo", false));
 
     return { p.begin(), p.end() };
 }
@@ -335,6 +342,27 @@ void VocalRiserAudioProcessor::renderRiser()
     const int edge = jmin (seg / 3, (int) (0.02 * rate));
     for (int ch = 0; ch < 2; ++ch) attack.applyGainRamp (ch, seg - edge, edge, 1.0f, 0.0f);
 
+    // Sorgente stereo o mono? (una traccia stereo con L = R conta come mono)
+    bool srcStereo = false;
+    if (capCh >= 2)
+    {
+        const float* l = cap.getReadPointer (0);
+        const float* r = cap.getReadPointer (1);
+        double sum = 0.0, diff = 0.0;
+        for (int j = 0; j < capLen; ++j)
+        {
+            sum  += (double) (l[j] + r[j]) * (l[j] + r[j]);
+            diff += (double) (l[j] - r[j]) * (l[j] - r[j]);
+        }
+        srcStereo = diff > sum * 0.001; // differenza oltre -30 dB
+    }
+    sourceStereo.store (srcStereo ? 1 : 0);
+
+    const auto image = srcStereo                  ? RiserReverbs::keepStereo
+                     : pStereoOn->load() > 0.5f   ? RiserReverbs::monoToStereo
+                                                  : RiserReverbs::monoOut;
+    const auto revType = (RiserReverbs::Type) jlimit (0, 2, (int) pRevType->load());
+
     // 2) Attacco rovesciato -> eco a tempo + riverbero 100% wet (nessun segnale dry)
     AudioBuffer<float> rev (2, seg);
     for (int ch = 0; ch < 2; ++ch)
@@ -346,7 +374,8 @@ void VocalRiserAudioProcessor::renderRiser()
 
     // Coda naturale: lunga quanto il riser ma al massimo ~1,6 s; il resto lo fa lo stretch
     const int tailLen = jmin (Ls, (int) ((0.8 + 0.8 * amount) * rate));
-    const int total   = seg + tailLen;
+    const int search  = (int) (0.5 * rate);          // finestra in cui cercare il picco del riverbero
+    const int total   = seg + search + tailLen;
     AudioBuffer<float> wet (2, total);
     wet.clear();
     for (int ch = 0; ch < 2; ++ch) wet.copyFrom (ch, 0, rev, ch, 0, seg);
@@ -356,30 +385,36 @@ void VocalRiserAudioProcessor::renderRiser()
     for (int ch = 0; ch < 2; ++ch)
     {
         float* w = wet.getWritePointer (ch);
-        const int offset = ch == 0 ? dly : dly + dly / 3; // leggero ping-pong
+        // ping-pong solo quando si allarga una voce mono
+        const int offset = (ch == 1 && image == RiserReverbs::monoToStereo) ? dly + dly / 3 : dly;
         for (int j = offset; j < total; ++j) w[j] += fb * w[j - offset];
     }
 
-    Reverb rv;
-    rv.setSampleRate (rate);
-    Reverb::Parameters rp;
-    rp.roomSize   = jmin (0.985f, 0.80f + 0.16f * amount);
-    rp.damping    = 0.35f;
-    rp.wetLevel   = 0.33f;
-    rp.dryLevel   = 0.0f;   // solo coda
-    rp.width      = 1.0f;
-    rp.freezeMode = 0.0f;
-    rv.setParameters (rp);
-    for (int pos = 0; pos < total; pos += 512)
-        rv.processStereo (wet.getWritePointer (0) + pos, wet.getWritePointer (1) + pos, jmin (512, total - pos));
+    RiserReverbs::apply (wet, total, revType, image, amount, rate);
 
-    // 3) Solo la coda (dopo la fine della voce), rovesciata
+    // 3) Solo la coda, rovesciata. Parte dal punto in cui il riverbero e piu pieno
+    //    (subito dopo la voce), cosi il riser arriva al massimo proprio sull'attacco.
+    int tailStart = seg;
+    {
+        const int win = (int) (0.02 * rate);
+        double best = -1.0;
+        for (int pos = seg; pos + win <= seg + search; pos += win / 2)
+        {
+            double e = 0.0;
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const float* w = wet.getReadPointer (ch, pos);
+                for (int i = 0; i < win; ++i) e += (double) w[i] * w[i];
+            }
+            if (e > best) { best = e; tailStart = pos; }
+        }
+    }
     AudioBuffer<float> tail (2, tailLen);
     for (int ch = 0; ch < 2; ++ch)
     {
         const float* w = wet.getReadPointer (ch);
         float* t = tail.getWritePointer (ch);
-        for (int j = 0; j < tailLen; ++j) t[j] = w[seg + tailLen - 1 - j];
+        for (int j = 0; j < tailLen; ++j) t[j] = w[tailStart + tailLen - 1 - j];
     }
 
     // 4) Stretch della coda fino alla durata del riser
@@ -455,6 +490,9 @@ void VocalRiserAudioProcessor::renderRiser()
         }
     }
 
+    if (image == RiserReverbs::monoOut)
+        out.copyFrom (1, 0, out, 0, 0, Ls);   // uscita mono: L e R identici
+
     // 5) Normalizza a -1 dBFS e micro-fade
     normalise (out, Decibels::decibelsToGain (-1.0f));
     const int fadeIn = jmin (Ls / 4, (int) (0.01 * rate));
@@ -481,8 +519,8 @@ void VocalRiserAudioProcessor::renderRiser()
     rendered.makeCopyOf (out);
     renderedFile = File();
     renderReady = true;
-    renderInfo = String (roundToInt (bpm)) + " BPM  ·  " + String (Ls / rate, 2) + " s  ·  attacco "
-                 + String (seg / rate, 2) + " s";
+    renderInfo = String (roundToInt (bpm)) + " BPM  ·  " + String (Ls / rate, 2) + " s  ·  "
+                 + (srcStereo ? "voce stereo" : "voce mono");
 
     // 9) Passa la copia all'anteprima
     auto fresh = std::make_unique<AudioBuffer<float>> (out);

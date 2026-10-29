@@ -8,9 +8,7 @@ public:
     RiserLookAndFeel();
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos,
                            float startAngle, float endAngle, juce::Slider&) override;
-    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
-                               bool highlighted, bool down) override;
-    juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool, bool) override;
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool highlighted, bool down) override;
 };
 
@@ -28,11 +26,28 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override { dragStarted = false; }
 
-    juce::String status;
-
 private:
     VocalRiserAudioProcessor& proc;
     bool dragStarted = false;
+};
+
+//==============================================================================
+// Selettore minimale "‹ VALORE ›" legato a un parametro a scelta
+class ArrowSelector : public juce::Component
+{
+public:
+    ArrowSelector (juce::RangedAudioParameter& param, const juce::String& title, juce::StringArray values);
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+
+private:
+    void step (int delta);
+
+    juce::String title;
+    juce::StringArray values;
+    int index = 0;
+    juce::ParameterAttachment attachment;
 };
 
 //==============================================================================
@@ -48,7 +63,7 @@ public:
 
 private:
     void timerCallback() override;
-    void updateStatus();
+    juce::String statusText() const;
 
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
@@ -60,15 +75,17 @@ private:
     juce::TextButton captureBtn { "CATTURA" }, loopBtn { "LOOP" }, saveBtn { "SALVA" };
 
     juce::Slider amountKnob;
-    std::array<juce::TextButton, 4> lengthBtns;
+    ArrowSelector lengthSel, reverbSel;
+    juce::TextButton stereoBtn { "STEREO" };
     std::array<juce::TextButton, 4> fxBtns;
 
     std::unique_ptr<SliderAtt> amountAtt;
     std::vector<std::unique_ptr<ButtonAtt>> buttonAtts;
 
-    juce::Rectangle<int> knobArea;
-    int lastToggleMask = -1;
+    juce::Rectangle<int> displayArea, knobArea;
+    juce::String lastStatus;
     bool lastPreviewPlaying = false;
+    int lastSourceStereo = -2;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VocalRiserAudioProcessorEditor)
 };
