@@ -124,4 +124,5 @@ Nel frattempo puoi:
 - **Mac: «non è stata aperta» / «è danneggiato»** → esegui i comandi del passo 1.3 oppure premi «Apri comunque» in Privacy e sicurezza, poi rifai la scansione nella DAW.
 - **La DAW non trova il plugin** → controlla di averlo copiato nella cartella esatta indicata sopra (su Mac è `/Library`, non la cartella *Libreria* del tuo utente) e fai una nuova scansione.
 - **Windows: il plugin non compare** → controlla che la cartella copiata si chiami `Vocal Riser.vst3` e sia dentro `C:\Program Files\Common Files\VST3`. Le DAW a 32 bit non sono supportate.
-- **Il loop non si sente in Logic** → seleziona la traccia su cui c'è il plugin: a trasporto fermo Logic fa lavorare solo la traccia selezionata.
+- **Il loop non si sente in Logic** → seleziona la traccia su cui c'è il plugin: a trasporto fermo Logic fa lavorare solo la traccia selezionata. Se sul display compare «LOOP: SELEZIONA LA TRACCIA», è proprio questo il motivo.
+- **Aggiornare a una nuova versione** → chiudi la DAW, sostituisci i file nelle stesse cartelle, sbloccali di nuovo (passo 1.3) e riapri la DAW. I riser catturati nelle sessioni salvate restano.
