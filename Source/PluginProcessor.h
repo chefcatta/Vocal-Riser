@@ -8,6 +8,8 @@
 #include <vector>
 
 //==============================================================================
+class RiserRenderThread;
+
 class VocalRiserAudioProcessor : public juce::AudioProcessor,
                                  private juce::AudioProcessorValueTreeState::Listener
 {
@@ -49,29 +51,52 @@ public:
     {
         for (auto* prm : getParameters())
             if (auto* r = dynamic_cast<juce::RangedAudioParameter*> (prm))
+            {
+                r->beginChangeGesture();
                 r->setValueNotifyingHost (r->getDefaultValue());
+                r->endChangeGesture();
+            }
         previewLoop.store (false);
     }
     int  getCaptureState() const    { return captureState.load(); }
-    bool hasCapture() const         { return captureCounter.load() > 0; }
+    bool hasCapture() const         { return publishedIdx.load() >= 0; }
     int  getSourceStereo() const    { return sourceStereo.load(); } // -1 = nessuna cattura, 0 = mono, 1 = stereo
 
-    //== Render (solo message thread) ===========================================
-    bool updateRender();                 // true se ha appena renderizzato
-    bool hasRender() const               { return renderReady; }
-    const std::vector<float>& getPeaks() const { return peaks; }
-    juce::String getRenderInfo() const   { return renderInfo; }
+    //== Render ==================================================================
+    // Il riser viene calcolato su un thread a parte: l'interfaccia non si blocca mai.
+    void requestRenderIfNeeded();        // da chiamare dal timer dell'interfaccia
+    int  getRenderGeneration() const     { return renderGeneration.load(); }
+    bool hasRender() const               { return renderReady.load(); }
+    std::shared_ptr<const std::vector<float>> getPeaks() const;
+    juce::String getRenderInfo() const;
     juce::File writeRiserFile();         // scrive il WAV (una volta per render)
 
     //== Anteprima in loop (suona solo a trasporto fermo) =====================
     std::atomic<bool>  previewLoop { false };     // pulsante LOOP
-    std::atomic<bool>  previewPlaying { false };  // per l'interfaccia
     std::atomic<float> previewProgress { 0.0f };
+    bool isHostProcessing() const
+    {
+        return juce::Time::getMillisecondCounter() - lastProcessMs.load() < 300;
+    }
+    bool isPreviewPlaying() const
+    {
+        // vale solo se l'host sta davvero chiamando processBlock (Logic smette se la traccia non e selezionata)
+        return previewPlaying.load()
+            && juce::Time::getMillisecondCounter() - lastProcessMs.load() < 300;
+    }
 
 private:
+    friend class RiserRenderThread;
     void parameterChanged (const juce::String&, float) override { paramsDirty.store (true); }
     void renderRiser();
     void finishCapture (int& state);
+    void applyRestoredCapture();
+
+    struct RestoredCapture { juce::AudioBuffer<float> audio; double sr = 0.0, bpm = 120.0; };
+    std::unique_ptr<RestoredCapture> restored;      // cattura letta dalla sessione, in attesa di prepareToPlay
+
+    std::atomic<bool>     previewPlaying { false };
+    std::atomic<juce::uint32> lastProcessMs { 0 };
 
     std::atomic<float>* pAmount = nullptr;  std::atomic<float>* pLength = nullptr;
     std::atomic<float>* pFilterOn = nullptr; std::atomic<float>* pStutOn = nullptr;
@@ -79,7 +104,7 @@ private:
     std::atomic<float>* pRevType = nullptr;  std::atomic<float>* pStereoOn = nullptr;
     std::atomic<float>* pStutRate = nullptr;
 
-    double sr = 44100.0;
+    double sr = 0.0;
 
     // Cattura: doppio buffer (l'audio thread scrive in uno, il render legge l'altro)
     std::array<juce::AudioBuffer<float>, 2> captures;
@@ -96,20 +121,25 @@ private:
     std::array<std::vector<float>, 2> preRing;
     int ringPos = 0, ringMask = 0, prerollLen = 0;
 
-    // Render
-    juce::AudioBuffer<float> rendered;
-    std::vector<float> peaks;
-    juce::String renderInfo;
+    // Render (thread separato)
+    juce::CriticalSection captureLock;     // protegge le catture da prepareToPlay mentre il render le legge
+    juce::CriticalSection resultLock;      // protegge i risultati del render
+    std::shared_ptr<const juce::AudioBuffer<float>> rendered;
+    std::shared_ptr<const std::vector<float>> peaks;
+    double renderedSr = 44100.0;
+    juce::String renderInfo, renderedName;
     juce::File renderedFile;
-    bool renderReady = false;
-    int lastRenderedCounter = 0;
+    std::atomic<bool> renderReady { false };
+    std::atomic<int>  renderGeneration { 0 };
+    int lastRequestedCounter = 0;
     std::atomic<bool> paramsDirty { false };
     std::atomic<int>  sourceStereo { -1 };
+    std::unique_ptr<juce::Thread> renderThread;
 
     // Anteprima
     juce::SpinLock previewLock;
     std::unique_ptr<juce::AudioBuffer<float>> previewBuf;
-    int previewPos = 0;
+    std::atomic<int> previewPos { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VocalRiserAudioProcessor)
 };

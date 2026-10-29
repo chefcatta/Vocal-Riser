@@ -139,8 +139,10 @@ void RiserLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
     const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
     const auto  c      = bounds.getCentre();
     const float angle  = startAngle + pos * (endAngle - startAngle);
+    const float r      = radius * 0.78f;
+    const float f      = r * 0.955f;
 
-    // Scala a puntini sottili
+    // Scala a puntini sottili (economica: solo ellissi piene)
     constexpr int ticks = 49;
     for (int i = 0; i < ticks; ++i)
     {
@@ -163,31 +165,42 @@ void RiserLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
         g.fillEllipse (pt.x - s, pt.y - s, s * 2.0f, s * 2.0f);
     }
 
-    // Disco opaco che proietta un'ombra morbida
-    const float r = radius * 0.78f;
-    juce::Path body;
-    body.addEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
-    juce::DropShadow (juce::Colours::black.withAlpha (0.9f), juce::roundToInt (r * 0.5f),
-                      { 0, juce::roundToInt (r * 0.2f) }).drawForPath (g, body);
+    // Corpo della manopola (ombra, bordo, faccia): disegnato una volta sola e tenuto in memoria
+    const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const int   side  = juce::roundToInt (radius * 2.0f);
+    if (knobCache.isNull() || knobCacheSide != side || std::abs (knobCacheScale - scale) > 0.01f)
+    {
+        knobCacheSide  = side;
+        knobCacheScale = scale;
+        knobCache = juce::Image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) side * scale)),
+                                 juce::jmax (1, juce::roundToInt ((float) side * scale)), true);
+        juce::Graphics kg (knobCache);
+        kg.addTransform (juce::AffineTransform::scale (scale));
+        const juce::Point<float> kc ((float) side * 0.5f, (float) side * 0.5f);
 
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3d3f45), c.x, c.y - r,
-                                             juce::Colour (0xff0e0f11), c.x, c.y + r, false));
-    g.fillPath (body);
+        juce::Path body;
+        body.addEllipse (kc.x - r, kc.y - r, r * 2.0f, r * 2.0f);
+        juce::DropShadow (juce::Colours::black.withAlpha (0.9f), juce::roundToInt (r * 0.5f),
+                          { 0, juce::roundToInt (r * 0.2f) }).drawForPath (kg, body);
 
-    const float f = r * 0.955f;
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff1b1c20), c.x, c.y - f,
-                                             juce::Colour (0xff2a2b30), c.x, c.y + f, false));
-    g.fillEllipse (c.x - f, c.y - f, f * 2.0f, f * 2.0f);
+        kg.setGradientFill (juce::ColourGradient (juce::Colour (0xff3d3f45), kc.x, kc.y - r,
+                                                  juce::Colour (0xff0e0f11), kc.x, kc.y + r, false));
+        kg.fillPath (body);
 
-    // velatura opaca dall'alto + bordo luminoso in basso (faccia leggermente concava)
-    g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.035f), c.x, c.y - f,
-                                             juce::Colours::transparentWhite, c.x, c.y + f * 0.2f, false));
-    g.fillEllipse (c.x - f, c.y - f, f * 2.0f, f * 2.0f);
-    juce::Path rim;
-    rim.addCentredArc (c.x, c.y, f - 1.0f, f - 1.0f, 0.0f, juce::MathConstants<float>::pi * 0.65f,
-                       juce::MathConstants<float>::pi * 1.35f, true);
-    g.setColour (juce::Colours::white.withAlpha (0.07f));
-    g.strokePath (rim, juce::PathStrokeType (1.2f));
+        kg.setGradientFill (juce::ColourGradient (juce::Colour (0xff1b1c20), kc.x, kc.y - f,
+                                                  juce::Colour (0xff2a2b30), kc.x, kc.y + f, false));
+        kg.fillEllipse (kc.x - f, kc.y - f, f * 2.0f, f * 2.0f);
+
+        kg.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.035f), kc.x, kc.y - f,
+                                                  juce::Colours::transparentWhite, kc.x, kc.y + f * 0.2f, false));
+        kg.fillEllipse (kc.x - f, kc.y - f, f * 2.0f, f * 2.0f);
+        juce::Path rim;
+        rim.addCentredArc (kc.x, kc.y, f - 1.0f, f - 1.0f, 0.0f, juce::MathConstants<float>::pi * 0.65f,
+                           juce::MathConstants<float>::pi * 1.35f, true);
+        kg.setColour (juce::Colours::white.withAlpha (0.07f));
+        kg.strokePath (rim, juce::PathStrokeType (1.2f));
+    }
+    g.drawImage (knobCache, juce::Rectangle<float> ((float) side, (float) side).withCentre (c));
 
     // Indicatore: tacca chiara
     const auto p1 = c.getPointOnCircumference (f * 0.62f, angle);
@@ -252,111 +265,149 @@ void RiserLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, b
 }
 
 //==============================================================================
+// Prepara (una volta per ogni nuovo riser o dimensione) le immagini della forma d'onda
+void RiserWaveView::rebuildLayers (float scale)
+{
+    layerScale = scale;
+    layerGen   = proc.getRenderGeneration();
+    layerSize  = getLocalBounds().getBottomRight();
+    peaks      = proc.getPeaks();
+
+    const int pw = juce::jmax (1, juce::roundToInt ((float) getWidth()  * scale));
+    const int ph = juce::jmax (1, juce::roundToInt ((float) getHeight() * scale));
+    for (auto* img : { &normalImg, &dimImg, &litImg, &hotImg })
+        *img = juce::Image (juce::Image::ARGB, pw, ph, true);
+
+    if (peaks == nullptr || peaks->empty()) return;
+
+    auto inner = getLocalBounds().toFloat().reduced (6.0f, 16.0f);
+    const float mid  = inner.getCentreY();
+    const int   bars = juce::jmax (24, (int) (inner.getWidth() / 3.2f));
+    const float bw   = inner.getWidth() / (float) bars;
+    const float half = inner.getHeight() * 0.5f;
+    const int   nb   = (int) peaks->size();
+
+    juce::Path w;
+    for (int i = 0; i < bars; ++i)
+    {
+        const int k0 = i * nb / bars, k1 = juce::jmax (k0 + 1, (i + 1) * nb / bars);
+        float m = 0.0f;
+        for (int k = k0; k < k1; ++k) m = juce::jmax (m, (*peaks)[(size_t) k]);
+        const float hh = juce::jmax (0.8f, m * half);
+        w.addRoundedRectangle (inner.getX() + (float) i * bw + bw * 0.25f, mid - hh, bw * 0.5f, hh * 2.0f, bw * 0.25f);
+    }
+
+    auto paintLayer = [&] (juce::Image& img, auto&& fn)
+    {
+        juce::Graphics lg (img);
+        lg.addTransform (juce::AffineTransform::scale (scale));
+        fn (lg);
+    };
+
+    paintLayer (normalImg, [&] (juce::Graphics& lg)
+    {
+        juce::DropShadow (Colours::accent.withAlpha (0.7f), 16, {}).drawForPath (lg, w);
+        lg.setGradientFill (juce::ColourGradient (Colours::accent.withAlpha (0.35f), inner.getX(), 0.0f,
+                                                  Colours::accent2, inner.getRight(), 0.0f, false));
+        lg.fillPath (w);
+    });
+    paintLayer (dimImg, [&] (juce::Graphics& lg)
+    {
+        lg.setColour (Colours::accent.withAlpha (0.16f));
+        lg.fillPath (w);
+    });
+    paintLayer (litImg, [&] (juce::Graphics& lg)
+    {
+        juce::DropShadow (Colours::accent.withAlpha (0.8f), 14, {}).drawForPath (lg, w);
+        lg.setGradientFill (juce::ColourGradient (Colours::accent.withAlpha (0.55f), inner.getX(), 0.0f,
+                                                  Colours::accent2, inner.getRight(), 0.0f, false));
+        lg.fillPath (w);
+    });
+    paintLayer (hotImg, [&] (juce::Graphics& lg)
+    {
+        juce::DropShadow (Colours::accent2, 10, {}).drawForPath (lg, w);
+        lg.setColour (juce::Colours::white.withAlpha (0.95f));
+        lg.fillPath (w);
+    });
+}
+
 void RiserWaveView::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     auto inner = r.reduced (6.0f, 16.0f);
-    const auto& peaks = proc.getPeaks();
     const float mid = inner.getCentreY();
 
-    if (proc.hasRender() && ! peaks.empty())
-    {
-        const int   bars = juce::jmax (24, (int) (inner.getWidth() / 3.2f));
-        const float bw   = inner.getWidth() / (float) bars;
-        const float half = inner.getHeight() * 0.5f;
-        const int   nb   = (int) peaks.size();
-
-        const bool  sweep = proc.previewPlaying.load();
-        const float px    = inner.getX() + inner.getWidth() * proc.previewProgress.load();
-
-        juce::Path played, ahead, hot;
-        for (int i = 0; i < bars; ++i)
-        {
-            const int k0 = i * nb / bars, k1 = juce::jmax (k0 + 1, (i + 1) * nb / bars);
-            float m = 0.0f;
-            for (int k = k0; k < k1; ++k) m = juce::jmax (m, peaks[(size_t) k]);
-
-            const float bx = inner.getX() + (float) i * bw + bw * 0.25f;
-            float hh = juce::jmax (0.8f, m * half);
-
-            if (! sweep) { played.addRoundedRectangle (bx, mid - hh, bw * 0.5f, hh * 2.0f, bw * 0.25f); continue; }
-
-            // le barre vicino alla testina "pulsano" un po' piu alte
-            const float dist = std::abs (bx - px);
-            if (dist < 18.0f) hh = juce::jmin (half, hh * (1.0f + 0.25f * (1.0f - dist / 18.0f)));
-
-            auto& dest = bx > px ? ahead : (px - bx < 26.0f ? hot : played);
-            dest.addRoundedRectangle (bx, mid - hh, bw * 0.5f, hh * 2.0f, bw * 0.25f);
-        }
-
-        if (! sweep)
-        {
-            juce::DropShadow (Colours::accent.withAlpha (0.7f), 16, {}).drawForPath (g, played);
-            g.setGradientFill (juce::ColourGradient (Colours::accent.withAlpha (0.35f), inner.getX(), 0.0f,
-                                                     Colours::accent2, inner.getRight(), 0.0f, false));
-            g.fillPath (played);
-        }
-        else
-        {
-            // parte ancora da suonare: spenta, quasi un'ombra
-            g.setColour (Colours::accent.withAlpha (0.16f));
-            g.fillPath (ahead);
-
-            // parte gia suonata: accesa
-            juce::DropShadow (Colours::accent.withAlpha (0.8f), 14, {}).drawForPath (g, played);
-            g.setGradientFill (juce::ColourGradient (Colours::accent.withAlpha (0.5f), inner.getX(), 0.0f,
-                                                     Colours::accent2, px, 0.0f, false));
-            g.fillPath (played);
-
-            // scia luminosa dietro la testina
-            {
-                juce::Graphics::ScopedSaveState ss (g);
-                g.addTransform (juce::AffineTransform::scale (1.0f, 0.55f, px, mid));
-                g.setGradientFill (juce::ColourGradient (Colours::accent2.withAlpha (0.2f), px, mid,
-                                                         Colours::accent2.withAlpha (0.0f), px - 80.0f, mid, true));
-                g.fillEllipse (px - 80.0f, mid - 80.0f, 160.0f, 160.0f);
-            }
-
-            // barre "calde" appena toccate: quasi bianche
-            juce::DropShadow (Colours::accent2, 10, {}).drawForPath (g, hot);
-            g.setGradientFill (juce::ColourGradient (Colours::accent2, px - 26.0f, 0.0f, juce::Colours::white, px, 0.0f, false));
-            g.fillPath (hot);
-
-            // linea di scansione orizzontale
-            g.setGradientFill (juce::ColourGradient (Colours::accent2.withAlpha (0.0f), inner.getX(), mid,
-                                                     Colours::accent2.withAlpha (0.35f), px, mid, false));
-            g.fillRect (inner.getX(), mid - 0.5f, px - inner.getX(), 1.0f);
-
-            // testina: fascio verticale con bagliore
-            g.setGradientFill (juce::ColourGradient (Colours::accent2.withAlpha (0.0f), px, inner.getY() - 10.0f,
-                                                     Colours::accent2.withAlpha (0.0f), px, inner.getBottom() + 10.0f, false));
-            {
-                juce::ColourGradient beam (Colours::accent2.withAlpha (0.0f), px, inner.getY() - 12.0f,
-                                           Colours::accent2.withAlpha (0.0f), px, inner.getBottom() + 12.0f, false);
-                beam.addColour (0.5, Colours::accent2.withAlpha (0.45f));
-                g.setGradientFill (beam);
-                g.fillRect (px - 5.0f, inner.getY() - 12.0f, 10.0f, inner.getHeight() + 24.0f);
-                beam = juce::ColourGradient (juce::Colours::white.withAlpha (0.0f), px, inner.getY() - 12.0f,
-                                             juce::Colours::white.withAlpha (0.0f), px, inner.getBottom() + 12.0f, false);
-                beam.addColour (0.5, juce::Colours::white);
-                g.setGradientFill (beam);
-                g.fillRect (px - 0.75f, inner.getY() - 12.0f, 1.5f, inner.getHeight() + 24.0f);
-            }
-            g.setColour (Colours::accent2.withAlpha (0.35f));
-            g.fillEllipse (px - 5.0f, mid - 5.0f, 10.0f, 10.0f);
-            g.setColour (juce::Colours::white);
-            g.fillEllipse (px - 2.0f, mid - 2.0f, 4.0f, 4.0f);
-        }
-
-        g.setFont (labelFont (9.0f, 0.12f));
-        engravedText (g, proc.getRenderInfo().toUpperCase(), r.removeFromBottom (12.0f), juce::Justification::centred, Colours::dim);
-    }
-    else
+    if (! proc.hasRender())
     {
         g.setColour (Colours::faint);
         for (float xx = inner.getX(); xx < inner.getRight(); xx += 5.0f)
             g.fillRect (xx, mid - 0.5f, 2.0f, 1.0f);
+        return;
     }
+
+    const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    if (normalImg.isNull() || layerGen != proc.getRenderGeneration() || std::abs (layerScale - scale) > 0.01f
+         || layerSize != getLocalBounds().getBottomRight())
+        rebuildLayers (scale);
+
+    if (! proc.isPreviewPlaying())
+    {
+        g.drawImage (normalImg, r);
+    }
+    else
+    {
+        const float px = inner.getX() + inner.getWidth() * proc.previewProgress.load();
+
+        // da suonare: spenta
+        g.drawImage (dimImg, r);
+
+        // gia suonata: accesa
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            g.reduceClipRegion (juce::Rectangle<float> (0.0f, 0.0f, px, r.getHeight()).toNearestInt());
+            g.drawImage (litImg, r);
+        }
+
+        // barre appena toccate dalla testina: quasi bianche
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            g.reduceClipRegion (juce::Rectangle<float> (px - 26.0f, 0.0f, 26.0f, r.getHeight()).toNearestInt());
+            g.drawImage (hotImg, r);
+        }
+
+        // alone morbido dietro la testina
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            g.addTransform (juce::AffineTransform::scale (1.0f, 0.55f, px, mid));
+            g.setGradientFill (juce::ColourGradient (Colours::accent2.withAlpha (0.2f), px, mid,
+                                                     Colours::accent2.withAlpha (0.0f), px - 80.0f, mid, true));
+            g.fillEllipse (px - 80.0f, mid - 80.0f, 160.0f, 160.0f);
+        }
+
+        // linea di scansione
+        g.setGradientFill (juce::ColourGradient (Colours::accent2.withAlpha (0.0f), inner.getX(), mid,
+                                                 Colours::accent2.withAlpha (0.35f), px, mid, false));
+        g.fillRect (inner.getX(), mid - 0.5f, juce::jmax (0.0f, px - inner.getX()), 1.0f);
+
+        // testina: fascio verticale
+        juce::ColourGradient beam (Colours::accent2.withAlpha (0.0f), px, inner.getY() - 12.0f,
+                                   Colours::accent2.withAlpha (0.0f), px, inner.getBottom() + 12.0f, false);
+        beam.addColour (0.5, Colours::accent2.withAlpha (0.45f));
+        g.setGradientFill (beam);
+        g.fillRect (px - 5.0f, inner.getY() - 12.0f, 10.0f, inner.getHeight() + 24.0f);
+        beam = juce::ColourGradient (juce::Colours::white.withAlpha (0.0f), px, inner.getY() - 12.0f,
+                                     juce::Colours::white.withAlpha (0.0f), px, inner.getBottom() + 12.0f, false);
+        beam.addColour (0.5, juce::Colours::white);
+        g.setGradientFill (beam);
+        g.fillRect (px - 0.75f, inner.getY() - 12.0f, 1.5f, inner.getHeight() + 24.0f);
+        g.setColour (Colours::accent2.withAlpha (0.35f));
+        g.fillEllipse (px - 5.0f, mid - 5.0f, 10.0f, 10.0f);
+        g.setColour (juce::Colours::white);
+        g.fillEllipse (px - 2.0f, mid - 2.0f, 4.0f, 4.0f);
+    }
+
+    g.setFont (labelFont (9.0f, 0.12f));
+    engravedText (g, proc.getRenderInfo().toUpperCase(), r.removeFromBottom (12.0f), juce::Justification::centred, Colours::dim);
 }
 
 void RiserWaveView::mouseDrag (const juce::MouseEvent& e)
@@ -509,7 +560,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
 
     setSize (460, 586);
     timerCallback();
-    startTimerHz (60);
+    startTimerHz (30);
 }
 
 VocalRiserAudioProcessorEditor::~VocalRiserAudioProcessorEditor()
@@ -527,12 +578,48 @@ juce::String VocalRiserAudioProcessorEditor::statusText() const
         default: break;
     }
     if (! proc.hasRender())            return "PREMI CATTURA, POI PLAY";
-    if (proc.previewPlaying.load())    return "LOOP";
+    if (proc.isPreviewPlaying())       return "LOOP";
+    if (proc.previewLoop.load() && ! proc.isHostProcessing())
+        return "LOOP: SELEZIONA LA TRACCIA";       // Logic a trasporto fermo processa solo la traccia selezionata
     return juce::CharPointer_UTF8 ("TRASCINA NELLA SESSIONE \xe2\x86\x97");
 }
 
 //==============================================================================
 void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
+{
+    // Sfondo statico (ombre, display, puntini, logo): calcolato una volta e riusato
+    const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    if (bgCache.isNull() || std::abs (bgScale - scale) > 0.01f
+         || bgCache.getWidth() != juce::roundToInt ((float) getWidth() * scale))
+    {
+        bgScale = scale;
+        bgCache = juce::Image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * scale)),
+                               juce::jmax (1, juce::roundToInt ((float) getHeight() * scale)), true);
+        juce::Graphics bg (bgCache);
+        bg.addTransform (juce::AffineTransform::scale (scale));
+        paintStatic (bg);
+    }
+    g.drawImage (bgCache, getLocalBounds().toFloat());
+
+    // Parti che cambiano
+    const auto d = displayArea.toFloat();
+    g.setFont (labelFont (8.5f, 0.16f));
+    engravedText (g, statusText(), { d.getCentreX() - 140.0f, d.getY() + 36.0f, 280.0f, 12.0f },
+                  juce::Justification::centred, proc.isPreviewPlaying() ? Colours::accent2 : Colours::dim);
+
+    auto lab = intensityArea.toFloat().withTrimmedTop (12.0f);
+    g.setFont (labelFont (12.5f, 0.12f));
+    engravedText (g, juce::String (juce::roundToInt (amountKnob.getValue() * 100.0)) + " %", lab,
+                  juce::Justification::centred, Colours::text);
+
+    const auto sb = stereoBtn.getBounds().toFloat();
+    g.setFont (labelFont (8.5f, 0.2f));
+    engravedText (g, proc.getSourceStereo() == 1 ? "SORGENTE STEREO" : "IMMAGINE",
+                  { sb.getX() - 20.0f, sb.getY() - 12.0f, sb.getWidth() + 40.0f, 12.0f },
+                  juce::Justification::centred, Colours::dim);
+}
+
+void VocalRiserAudioProcessorEditor::paintStatic (juce::Graphics& g)
 {
     g.fillAll (Colours::bg);
 
@@ -573,9 +660,6 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (labelFont (11.0f, 0.3f));
     engravedText (g, "VOCAL RISER", titleR, juce::Justification::centredLeft, Colours::text);
 
-    g.setFont (labelFont (8.5f, 0.16f));
-    engravedText (g, statusText(), { d.getCentreX() - 140.0f, d.getY() + 36.0f, 280.0f, 12.0f },
-                  juce::Justification::centred, proc.previewPlaying.load() ? Colours::accent2 : Colours::dim);
 
     // Alloggiamento morbido della manopola, dentro l'incavo
     const auto kc = knobCentre;
@@ -592,17 +676,8 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
         g.setFont (labelFont (8.5f, 0.2f));
         engravedText (g, juce::CharPointer_UTF8 ("INTENSIT\xc3\x80"), lab.removeFromTop (12.0f),
                       juce::Justification::centred, Colours::dim);
-        g.setFont (labelFont (12.5f, 0.12f));
-        engravedText (g, juce::String (juce::roundToInt (amountKnob.getValue() * 100.0)) + " %", lab,
-                      juce::Justification::centred, Colours::text);
     }
 
-    // Etichetta sopra STEREO, come gli altri selettori
-    const auto sb = stereoBtn.getBounds().toFloat();
-    g.setFont (labelFont (8.5f, 0.2f));
-    const int src = proc.getSourceStereo();
-    engravedText (g, src == 1 ? "SORGENTE STEREO" : "IMMAGINE", { sb.getX() - 20.0f, sb.getY() - 12.0f, sb.getWidth() + 40.0f, 12.0f },
-                  juce::Justification::centred, Colours::dim);
 
     // Separatore sottile sopra agli effetti
     const float sepY = (float) fxBtns[0].getY() - 8.0f;
@@ -646,6 +721,7 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
 
 void VocalRiserAudioProcessorEditor::resized()
 {
+    bgCache = {};
     auto shell = getLocalBounds().reduced (8);
 
     // Display in alto
@@ -719,22 +795,20 @@ void VocalRiserAudioProcessorEditor::resized()
 
 void VocalRiserAudioProcessorEditor::timerCallback()
 {
-    if (proc.updateRender())
-        wave.repaint();
+    proc.requestRenderIfNeeded();   // il calcolo avviene su un altro thread
 
-    const bool playingPreview = proc.previewPlaying.load();
-    if (playingPreview || playingPreview != lastPreviewPlaying)
+    const int gen = proc.getRenderGeneration();
+    const bool playingPreview = proc.isPreviewPlaying();
+    if (gen != lastGeneration || playingPreview || playingPreview != lastPreviewPlaying)
         wave.repaint();
+    lastGeneration = gen;
+    lastPreviewPlaying = playingPreview;
 
     const auto st = statusText();
     if (st != lastStatus) { lastStatus = st; repaint (displayArea.withHeight (52)); }
 
     saveBtn.setEnabled (proc.hasRender());
     timingSel.setEnabled (fxBtns[1].getToggleState());
-
-    if (playingPreview || playingPreview != lastPreviewPlaying)
-        repaint (knobArea.expanded (40));
-    lastPreviewPlaying = playingPreview;
     captureBtn.setToggleState (proc.getCaptureState() != VocalRiserAudioProcessor::stateIdle, juce::dontSendNotification);
 
     // Voce stereo: resta stereo, il selettore si blocca su STEREO

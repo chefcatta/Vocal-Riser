@@ -10,6 +10,11 @@ public:
                            float startAngle, float endAngle, juce::Slider&) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool, bool) override;
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool highlighted, bool down) override;
+
+private:
+    juce::Image knobCache;           // corpo della manopola gia disegnato
+    int   knobCacheSide = 0;
+    float knobCacheScale = 0.0f;
 };
 
 //==============================================================================
@@ -27,8 +32,17 @@ public:
     void mouseUp (const juce::MouseEvent&) override { dragStarted = false; }
 
 private:
+    void rebuildLayers (float scale);
+
     VocalRiserAudioProcessor& proc;
     bool dragStarted = false;
+
+    // livelli gia disegnati della forma d'onda (si rifanno solo quando cambia il riser)
+    juce::Image normalImg, dimImg, litImg, hotImg;
+    std::shared_ptr<const std::vector<float>> peaks;
+    int   layerGen = -1;
+    float layerScale = 0.0f;
+    juce::Point<int> layerSize;
 };
 
 //==============================================================================
@@ -64,6 +78,11 @@ public:
 private:
     void timerCallback() override;
     juce::String statusText() const;
+    void paintStatic (juce::Graphics&);
+
+    juce::Image bgCache;
+    float bgScale = 0.0f;
+    int lastGeneration = -1;
 
 
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;

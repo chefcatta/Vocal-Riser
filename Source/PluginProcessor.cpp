@@ -95,6 +95,31 @@ namespace
 }
 
 //==============================================================================
+// Thread che calcola il riser: riceve le richieste e tiene sempre solo l'ultima
+class RiserRenderThread : public juce::Thread
+{
+public:
+    explicit RiserRenderThread (VocalRiserAudioProcessor& p) : juce::Thread ("VocalRiser render"), owner (p) {}
+
+    void request() { pending.store (true); notify(); }
+
+    void run() override
+    {
+        while (! threadShouldExit())
+        {
+            if (pending.exchange (false))
+                owner.renderRiser();
+            else
+                wait (-1);
+        }
+    }
+
+private:
+    VocalRiserAudioProcessor& owner;
+    std::atomic<bool> pending { false };
+};
+
+//==============================================================================
 VocalRiserAudioProcessor::VocalRiserAudioProcessor()
     : AudioProcessor (BusesProperties()
                         .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
@@ -113,10 +138,17 @@ VocalRiserAudioProcessor::VocalRiserAudioProcessor()
 
     for (auto* id : renderParams)
         apvts.addParameterListener (id, this);
+
+    renderThread = std::make_unique<RiserRenderThread> (*this);
+    renderThread->startThread (juce::Thread::Priority::low);
 }
 
 VocalRiserAudioProcessor::~VocalRiserAudioProcessor()
 {
+    renderThread->signalThreadShouldExit();
+    renderThread->notify();
+    renderThread->stopThread (4000);
+
     for (auto* id : renderParams)
         apvts.removeParameterListener (id, this);
 }
@@ -155,17 +187,44 @@ bool VocalRiserAudioProcessor::isBusesLayoutSupported (const BusesLayout& layout
 
 void VocalRiserAudioProcessor::prepareToPlay (double sampleRate, int)
 {
-    sr = sampleRate;
-    captureMax = (int) (8.5 * sr); // basta per 2 battute anche a 60 BPM
+    {
+        const juce::ScopedLock sl (captureLock);
 
-    for (auto& c : captures) { c.setSize (2, captureMax); c.clear(); }
+        // Logic richiama prepareToPlay spesso (cambio buffer, bounce...): la cattura
+        // si conserva, si riparte da zero solo se cambia la frequenza di campionamento.
+        const bool srChanged = std::abs (sampleRate - sr) > 0.5 || captureMax == 0;
+        if (srChanged)
+        {
+            sr = sampleRate;
+            captureMax = (int) (8.5 * sr); // basta per 2 battute anche a 60 BPM
+            for (auto& c : captures) { c.setSize (2, captureMax); c.clear(); }
+            captureLens = { 0, 0 };
+            writeIdx = 0;
+            publishedIdx.store (-1);
+            renderReady.store (false);
+            sourceStereo.store (-1);
+            {
+                const juce::SpinLock::ScopedLockType lock (previewLock);
+                previewBuf.reset();
+                previewPos.store (0);
+            }
+        }
 
-    int ringSize = 1;
-    while (ringSize < (int) (0.05 * sr)) ringSize <<= 1;
-    for (auto& r : preRing) r.assign ((size_t) ringSize, 0.0f);
-    ringMask = ringSize - 1;
-    ringPos = 0;
-    prerollLen = (int) (0.008 * sr);
+        int ringSize = 1;
+        while (ringSize < (int) (0.05 * sr)) ringSize <<= 1;
+        for (auto& r : preRing) r.assign ((size_t) ringSize, 0.0f);
+        ringMask = ringSize - 1;
+        ringPos = 0;
+        prerollLen = (int) (0.008 * sr);
+        recLen = 0;
+        silenceCount = 0;
+        wasPlaying = false;
+        if (captureState.load() == stateRecording)
+            captureState.store (stateArmed);
+
+        applyRestoredCapture();
+    }
+    paramsDirty.store (true);
 }
 
 //==============================================================================
@@ -187,6 +246,7 @@ void VocalRiserAudioProcessor::finishCapture (int& state)
 void VocalRiserAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+    lastProcessMs.store (juce::Time::getMillisecondCounter());
 
     const int numIn  = getTotalNumInputChannels();
     const int numOut = getTotalNumOutputChannels();
@@ -268,58 +328,79 @@ void VocalRiserAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
             const int gap = (int) (60.0 / bpm * sr);          // un beat di pausa tra una ripetizione e l'altra
             const int cycle = len + gap;
 
+            int pos = previewPos.load (std::memory_order_relaxed);
             for (int i = 0; i < n; ++i)
             {
-                if (previewPos >= cycle) previewPos = 0;
-                if (previewPos < len)
+                if (pos >= cycle) pos = 0;
+                if (pos < len)
                     for (int ch = 0; ch < numOut; ++ch)
-                        buffer.addSample (ch, i, previewBuf->getSample (juce::jmin (ch, 1), previewPos));
-                ++previewPos;
+                        buffer.addSample (ch, i, previewBuf->getSample (juce::jmin (ch, 1), pos));
+                ++pos;
             }
+            previewPos.store (pos, std::memory_order_relaxed);
             playingPreview = true;
-            previewProgress.store (juce::jmin (1.0f, (float) previewPos / (float) len));
+            previewProgress.store (juce::jmin (1.0f, (float) pos / (float) len));
         }
     }
     else
     {
-        previewPos = 0; // al prossimo stop riparte dall'inizio
+        previewPos.store (0, std::memory_order_relaxed); // al prossimo stop riparte dall'inizio
     }
     previewPlaying.store (playingPreview);
 }
 
 //==============================================================================
-bool VocalRiserAudioProcessor::updateRender()
+void VocalRiserAudioProcessor::requestRenderIfNeeded()
 {
-    const int counter = captureCounter.load();
-    if (counter > 0 && counter != lastRenderedCounter)
-    {
-        lastRenderedCounter = counter;
-        paramsDirty.store (false);
-        renderRiser();
-        return true;
-    }
+    if (! hasCapture()) return;
 
-    if (paramsDirty.exchange (false) && counter > 0)
+    const int counter = captureCounter.load();
+    const bool newCapture = counter != lastRequestedCounter;
+    if (newCapture || paramsDirty.exchange (false))
     {
-        renderRiser();
-        return true;
+        lastRequestedCounter = counter;
+        static_cast<RiserRenderThread*> (renderThread.get())->request();
     }
-    return false;
+}
+
+std::shared_ptr<const std::vector<float>> VocalRiserAudioProcessor::getPeaks() const
+{
+    const juce::ScopedLock sl (resultLock);
+    return peaks;
+}
+
+juce::String VocalRiserAudioProcessor::getRenderInfo() const
+{
+    const juce::ScopedLock sl (resultLock);
+    return renderInfo;
 }
 
 void VocalRiserAudioProcessor::renderRiser()
 {
     using namespace juce;
 
-    const int idx = publishedIdx.load();
-    if (idx < 0) return;
-
-    const auto&  cap    = captures[(size_t) idx];
-    const int    capLen = captureLens[(size_t) idx];
-    const int    capCh  = jmax (1, captureChans[(size_t) idx]);
-    const double bpm    = captureBpms[(size_t) idx];
-    const double rate   = sr;
-    if (capLen <= 0) return;
+    // Copia locale della cattura: da qui in poi il render non tocca piu i buffer dell'audio thread
+    AudioBuffer<float> cap;
+    int capLen = 0, capCh = 1;
+    double bpm = 120.0, rate = 44100.0;
+    {
+        const ScopedLock sl (captureLock);
+        for (int attempt = 0; attempt < 3; ++attempt)
+        {
+            const int before = captureCounter.load();
+            const int idx = publishedIdx.load();
+            if (idx < 0) return;
+            capLen = jmin (captureLens[(size_t) idx], captures[(size_t) idx].getNumSamples());
+            capCh  = jlimit (1, 2, captureChans[(size_t) idx]);
+            bpm    = captureBpms[(size_t) idx];
+            rate   = sr;
+            if (capLen <= 0) return;
+            cap.setSize (2, capLen, false, false, true);
+            for (int ch = 0; ch < 2; ++ch)
+                cap.copyFrom (ch, 0, captures[(size_t) idx], jmin (ch, capCh - 1), 0, capLen);
+            if (captureCounter.load() == before) break;   // nessuna nuova cattura durante la copia
+        }
+    }
 
     const float  amount     = pAmount->load();
     const int    lenIdx     = jlimit (0, 3, (int) pLength->load());
@@ -509,7 +590,7 @@ void VocalRiserAudioProcessor::renderRiser()
 
     // 8) Forma d'onda per l'interfaccia
     constexpr int bins = 300;
-    peaks.assign (bins, 0.0f);
+    auto newPeaks = std::make_shared<std::vector<float>> (bins, 0.0f);
     for (int b = 0; b < bins; ++b)
     {
         const int s0 = (int) ((int64) b * Ls / bins);
@@ -517,53 +598,74 @@ void VocalRiserAudioProcessor::renderRiser()
         float m = 0.0f;
         for (int ch = 0; ch < 2; ++ch)
             m = jmax (m, out.getMagnitude (ch, s0, s1 - s0));
-        peaks[(size_t) b] = m;
+        (*newPeaks)[(size_t) b] = m;
     }
 
-    rendered.makeCopyOf (out);
-    renderedFile = File();
-    renderReady = true;
-    renderInfo = String (roundToInt (bpm)) + " BPM  ·  " + String (Ls / rate, 2) + " s  ·  "
-                 + (srcStereo ? "voce stereo" : "voce mono");
+    // 9) Pubblica il risultato
+    {
+        const ScopedLock sl (resultLock);
+        rendered     = std::make_shared<const AudioBuffer<float>> (out);
+        peaks        = newPeaks;
+        renderedSr   = rate;
+        renderedName = String (roundToInt (bpm)) + "bpm_" + lengthNames[lenIdx];
+        renderInfo   = String (roundToInt (bpm)) + " BPM  ·  " + String (Ls / rate, 2) + " s  ·  "
+                       + (srcStereo ? "voce stereo" : "voce mono");
+        renderedFile = File();
+    }
+    renderReady.store (true);
+    renderGeneration.fetch_add (1);
 
-    // 9) Passa la copia all'anteprima
+    // 10) Passa la copia all'anteprima senza farla ripartire da capo:
+    //     se il loop sta suonando, continua dallo stesso punto (in proporzione)
     auto fresh = std::make_unique<AudioBuffer<float>> (out);
     {
         const SpinLock::ScopedLockType lock (previewLock);
+        const int oldLen = previewBuf != nullptr ? previewBuf->getNumSamples() : 0;
+        const int pos = previewPos.load (std::memory_order_relaxed);
+        if (oldLen > 0 && pos < oldLen)
+            previewPos.store ((int) ((int64) pos * Ls / oldLen), std::memory_order_relaxed);
+        else if (oldLen == 0)
+            previewPos.store (0, std::memory_order_relaxed);
         std::swap (previewBuf, fresh);
-        previewPos = 0;
     }
+    // il buffer vecchio viene liberato qui, fuori dal lock e fuori dall'audio thread
 }
 
 juce::File VocalRiserAudioProcessor::writeRiserFile()
 {
     using namespace juce;
-    if (! renderReady) return {};
-    if (renderedFile.existsAsFile()) return renderedFile;
+    std::shared_ptr<const AudioBuffer<float>> buf;
+    double rate;
+    String name;
+    {
+        const ScopedLock sl (resultLock);
+        if (rendered == nullptr) return {};
+        if (renderedFile.existsAsFile()) return renderedFile;
+        buf = rendered; rate = renderedSr; name = renderedName;
+    }
 
     auto folder = File::getSpecialLocation (File::userDocumentsDirectory).getChildFile ("Vocal Riser");
     if (! folder.createDirectory())
         folder = File::getSpecialLocation (File::tempDirectory);
 
-    const int lenIdx = jlimit (0, 3, (int) pLength->load());
-    const int idx = jmax (0, publishedIdx.load());
-    auto file = folder.getNonexistentChildFile ("VocalRiser_" + String (roundToInt (captureBpms[(size_t) idx])) + "bpm_"
-                                                    + lengthNames[lenIdx] + "_"
-                                                    + Time::getCurrentTime().formatted ("%H%M%S"),
+    auto file = folder.getNonexistentChildFile ("VocalRiser_" + name + "_" + Time::getCurrentTime().formatted ("%H%M%S"),
                                                 ".wav", false);
 
     WavAudioFormat wav;
     std::unique_ptr<OutputStream> stream (file.createOutputStream());
     if (stream == nullptr) return {};
 
-    std::unique_ptr<AudioFormatWriter> writer (wav.createWriterFor (stream.get(), sr, 2, 24, {}, 0));
+    std::unique_ptr<AudioFormatWriter> writer (wav.createWriterFor (stream.get(), rate, 2, 24, {}, 0));
     if (writer == nullptr) return {};
     stream.release(); // ora appartiene al writer
 
-    writer->writeFromAudioSampleBuffer (rendered, 0, rendered.getNumSamples());
+    writer->writeFromAudioSampleBuffer (*buf, 0, buf->getNumSamples());
     writer.reset();
 
-    renderedFile = file;
+    {
+        const ScopedLock sl (resultLock);
+        if (rendered == buf) renderedFile = file;   // solo se nel frattempo non e cambiato
+    }
     return file;
 }
 
@@ -571,15 +673,97 @@ juce::File VocalRiserAudioProcessor::writeRiserFile()
 void VocalRiserAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
+    state.removeChild (state.getChildWithName ("CAPTURE"), nullptr);
+
+    // Salva nella sessione anche l'inizio della frase catturata (max 1,5 s),
+    // cosi riaprendo il progetto il riser c'e ancora
+    {
+        const juce::ScopedLock sl (captureLock);
+        const int idx = publishedIdx.load();
+        if (idx >= 0 && captureLens[(size_t) idx] > 0)
+        {
+            const int len = juce::jmin (captureLens[(size_t) idx], (int) (1.5 * sr));
+            const int chans = juce::jlimit (1, 2, captureChans[(size_t) idx]);
+            juce::MemoryBlock mb;
+            for (int ch = 0; ch < chans; ++ch)
+                mb.append (captures[(size_t) idx].getReadPointer (ch), sizeof (float) * (size_t) len);
+
+            juce::ValueTree c ("CAPTURE");
+            c.setProperty ("sr", sr, nullptr);
+            c.setProperty ("bpm", captureBpms[(size_t) idx], nullptr);
+            c.setProperty ("chans", chans, nullptr);
+            c.setProperty ("len", len, nullptr);
+            c.setProperty ("data", mb.toBase64Encoding(), nullptr);
+            state.appendChild (c, nullptr);
+        }
+    }
+
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
 void VocalRiserAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-        if (xml->hasTagName (apvts.state.getType()))
-            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+    if (xml == nullptr || ! xml->hasTagName (apvts.state.getType()))
+        return;
+
+    auto tree = juce::ValueTree::fromXml (*xml);
+    auto c = tree.getChildWithName ("CAPTURE");
+    if (c.isValid())
+    {
+        juce::MemoryBlock mb;
+        const int len = c["len"], chans = juce::jlimit (1, 2, (int) c["chans"]);
+        if (len > 0 && mb.fromBase64Encoding (c["data"].toString())
+             && mb.getSize() >= sizeof (float) * (size_t) (len * chans))
+        {
+            auto r = std::make_unique<RestoredCapture>();
+            r->audio.setSize (chans, len);
+            for (int ch = 0; ch < chans; ++ch)
+                r->audio.copyFrom (ch, 0, static_cast<const float*> (mb.getData()) + (size_t) ch * (size_t) len, len);
+            r->sr = c["sr"];
+            r->bpm = c["bpm"];
+
+            const juce::ScopedLock sl (captureLock);
+            restored = std::move (r);
+            applyRestoredCapture();
+        }
+        tree.removeChild (c, nullptr);
+    }
+
+    apvts.replaceState (tree);
+    paramsDirty.store (true);
+}
+
+// Chiamata con captureLock preso
+void VocalRiserAudioProcessor::applyRestoredCapture()
+{
+    if (restored == nullptr || captureMax == 0)
+        return;
+
+    auto& src = restored->audio;
+    const int slot = writeIdx ^ 1;                      // mai il buffer in cui l'audio thread sta scrivendo
+    auto& dst = captures[(size_t) slot];
+    const double ratio = restored->sr > 0.0 ? restored->sr / sr : 1.0;
+    const int outLen = juce::jmin (captureMax, (int) (src.getNumSamples() / ratio));
+
+    dst.clear();
+    for (int ch = 0; ch < src.getNumChannels(); ++ch)
+    {
+        if (std::abs (ratio - 1.0) < 1.0e-6)
+            dst.copyFrom (ch, 0, src, ch, 0, outLen);
+        else
+        {
+            juce::LagrangeInterpolator interp;
+            interp.process (ratio, src.getReadPointer (ch), dst.getWritePointer (ch), outLen);
+        }
+    }
+    captureLens[(size_t) slot]  = outLen;
+    captureChans[(size_t) slot] = src.getNumChannels();
+    captureBpms[(size_t) slot]  = restored->bpm > 0.0 ? restored->bpm : 120.0;
+    publishedIdx.store (slot);
+    captureCounter.fetch_add (1);
+    restored.reset();
 }
 
 juce::AudioProcessorEditor* VocalRiserAudioProcessor::createEditor()
