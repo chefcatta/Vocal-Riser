@@ -54,9 +54,40 @@ jobs:
           path: out
           merge-multiple: true
 
+      - uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Leggi la versione
+        id: ver
+        run: |
+          v=$(sed -n 's/^project(VocalRiser VERSION \([0-9.]*\)).*/\1/p' src/CMakeLists.txt)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          cp src/INSTALLAZIONE.md out/INSTALLAZIONE.md
+
+      - name: Pubblica la release (pagina di download)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Vocal Riser ${{ steps.ver.outputs.version }}
+          make_latest: true
+          body: |
+            **Vocal Riser — CHEF CATTA dsp**
+
+            Scarica il file per il tuo computer qui sotto (sezione *Assets*):
+            - **VocalRiser-mac.zip** — Mac (Apple Silicon e Intel): Audio Unit per Logic/GarageBand + VST3 per le altre DAW
+            - **VocalRiser-windows.zip** — Windows 64 bit: VST3
+
+            Le istruzioni di installazione per ogni DAW sono nel file **INSTALLAZIONE.md** qui sotto e nella pagina principale del progetto.
+          files: |
+            out/VocalRiser-mac.zip
+            out/VocalRiser-windows.zip
+            out/INSTALLAZIONE.md
+
       - name: Pubblica nel branch "plugin"
         run: |
           cd out
+          rm -f INSTALLAZIONE.md
           ls -la
           git init -q -b plugin
           git config user.name "github-actions"

@@ -4,6 +4,10 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
+# Windows: runtime C++ incluso nel plugin, cosi chi lo installa non deve
+# installare nient'altro (Visual C++ Redistributable)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 project(VocalRiser VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -17,6 +21,15 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(JUCE)
 
+# Pro Tools (AAX): si attiva solo indicando la cartella dell'AAX SDK di Avid,
+# es. cmake -B build -DVR_AAX_SDK_PATH=/percorso/aax-sdk
+set(VR_AAX_SDK_PATH "" CACHE PATH "Cartella dell'AAX SDK (opzionale, per Pro Tools)")
+set(VR_FORMATS AU VST3)
+if(VR_AAX_SDK_PATH)
+    juce_set_aax_sdk_path("${VR_AAX_SDK_PATH}")
+    list(APPEND VR_FORMATS AAX)
+endif()
+
 # Su Mac copia automaticamente AU/VST3 in ~/Library/Audio/Plug-Ins dopo la build
 if(APPLE)
     set(VR_COPY_AFTER_BUILD TRUE)
@@ -29,7 +42,8 @@ juce_add_plugin(VocalRiser
     BUNDLE_ID "com.chefcatta.vocalriser"
     PLUGIN_MANUFACTURER_CODE Vrsr
     PLUGIN_CODE Vrs1
-    FORMATS AU VST3 Standalone
+    FORMATS ${VR_FORMATS}
+    AAX_CATEGORY AAX_ePlugInCategory_Effect
     PRODUCT_NAME "Vocal Riser"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
