@@ -413,22 +413,16 @@ void ArrowSelector::paint (juce::Graphics& g)
 // Vite a croce in metallo, vista dall'alto con luce da in alto a sinistra
 static void drawScrew (juce::Graphics& g, juce::Point<float> c, float r, float angle)
 {
-    // asola del rack: foro ovale scavato nel metallo
+    // svasatura: incavo circolare nel pannello in cui siede la vite
     {
-        auto slot = juce::Rectangle<float> (r * 3.5f, r * 2.45f).withCentre (c);
+        const float sr = r * 1.45f;
         juce::Path s;
-        s.addRoundedRectangle (slot, slot.getHeight() * 0.5f);
-        g.setColour (juce::Colour (0xff060708));
+        s.addEllipse (c.x - sr, c.y - sr, sr * 2.0f, sr * 2.0f);
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff050607), c.x, c.y - sr,
+                                                 juce::Colour (0xff2a2c31), c.x, c.y + sr, false));
         g.fillPath (s);
-        juce::Graphics::ScopedSaveState ss (g);
-        g.reduceClipRegion (s);
-        juce::Path ring;
-        ring.addRectangle (slot.expanded (10.0f));
-        ring.addRoundedRectangle (slot, slot.getHeight() * 0.5f);
-        ring.setUsingNonZeroWinding (false);
-        juce::DropShadow (juce::Colours::black, 5, { 0, 2 }).drawForPath (g, ring);
-        g.setColour (juce::Colours::white.withAlpha (0.10f));
-        g.drawRoundedRectangle (slot.translated (0.0f, 0.6f), slot.getHeight() * 0.5f, 0.8f);
+        g.setColour (juce::Colours::white.withAlpha (0.08f));
+        g.drawEllipse (c.x - sr, c.y - sr + 0.6f, sr * 2.0f, sr * 2.0f, 0.8f);
     }
 
     juce::Path head;
@@ -487,49 +481,6 @@ static void drawScrew (juce::Graphics& g, juce::Point<float> c, float r, float a
     // bordo della testa
     g.setColour (juce::Colours::black.withAlpha (0.55f));
     g.drawEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f, 0.8f);
-}
-
-void VocalRiserAudioProcessorEditor::drawRackEars (juce::Graphics& g)
-{
-    const auto full = getLocalBounds().toFloat();
-    const float earW = (float) rackEar + 14.0f;   // le orecchie passano un po' sotto al corpo
-    const float angles[] = { 0.35f, 1.1f, 0.8f, 0.15f };
-    int k = 0;
-
-    for (int side = 0; side < 2; ++side)
-    {
-        auto ear = side == 0 ? full.withWidth (earW).reduced (2.0f, 2.0f)
-                             : full.withTrimmedLeft (full.getWidth() - earW).reduced (2.0f, 2.0f);
-        juce::Path p;
-        p.addRoundedRectangle (ear, 3.0f);
-
-        juce::DropShadow (juce::Colours::black, 8, { 0, 3 }).drawForPath (g, p);
-
-        // alluminio anodizzato scuro, spazzolato orizzontalmente
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3a3d43), ear.getX(), ear.getY(),
-                                                 juce::Colour (0xff1d1f23), ear.getX(), ear.getBottom(), false));
-        g.fillPath (p);
-        {
-            juce::Graphics::ScopedSaveState ss (g);
-            g.reduceClipRegion (p);
-            juce::Random rng (side * 77 + 5);
-            for (float yy = ear.getY(); yy < ear.getBottom(); yy += 1.0f)
-            {
-                g.setColour (juce::Colours::white.withAlpha (rng.nextFloat() * 0.035f));
-                g.fillRect (ear.getX(), yy, ear.getWidth(), 1.0f);
-            }
-        }
-        // smusso
-        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.18f), 0.0f, ear.getY(),
-                                                 juce::Colours::black.withAlpha (0.6f), 0.0f, ear.getBottom(), false));
-        g.strokePath (p, juce::PathStrokeType (1.0f));
-
-        // due viti per lato, nella parte visibile dell'orecchia
-        const float cx = side == 0 ? ear.getX() + (float) rackEar * 0.5f + 1.0f
-                                   : ear.getRight() - (float) rackEar * 0.5f - 1.0f;
-        for (float cy : { ear.getY() + 46.0f, ear.getBottom() - 46.0f })
-            drawScrew (g, { cx, cy }, 6.8f, angles[k++]);
-    }
 }
 
 //==============================================================================
@@ -608,7 +559,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
         buttonAtts.push_back (std::make_unique<ButtonAtt> (apvts, fxIds[i], b));
     }
 
-    setSize (460 + 2 * rackEar, 586);
+    setSize (460, 586);
     timerCallback();
     startTimerHz (60);
 }
@@ -638,8 +589,7 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillAll (Colours::bg);
 
     // Corpo
-    drawRackEars (g);
-    auto shellR = getLocalBounds().reduced (8).reduced (rackEar, 0).toFloat();
+    auto shellR = getLocalBounds().reduced (8).toFloat();
     juce::Path shell;
     shell.addRoundedRectangle (shellR, 16.0f);
     juce::DropShadow (juce::Colours::black, 16, { 0, 6 }).drawForPath (g, shell);
@@ -648,6 +598,16 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.10f), 0.0f, shellR.getY(),
                                              juce::Colours::black.withAlpha (0.6f), 0.0f, shellR.getBottom(), false));
     g.strokePath (shell, juce::PathStrokeType (1.0f));
+
+    // Viti di fissaggio agli angoli del pannello
+    {
+        const float m = 16.0f;
+        const float angles[] = { 0.35f, 1.1f, 0.8f, 0.15f };
+        int k = 0;
+        for (auto c : { shellR.getTopLeft().translated (m, m),    shellR.getTopRight().translated (-m, m),
+                        shellR.getBottomLeft().translated (m, -m), shellR.getBottomRight().translated (-m, -m) })
+            drawScrew (g, c, 5.5f, angles[k++]);
+    }
 
     // Display scuro in alto con l'incavo che abbraccia la manopola
     const auto d = displayArea.toFloat();
@@ -741,10 +701,10 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
 
 void VocalRiserAudioProcessorEditor::resized()
 {
-    auto shell = getLocalBounds().reduced (8).reduced (rackEar, 0);
+    auto shell = getLocalBounds().reduced (8);
 
     // Display in alto
-    displayArea = shell.withHeight (226).reduced (8, 8);
+    displayArea = shell.withHeight (226).reduced (30, 8);   // spazio ai lati per le viti
     const auto d = displayArea.toFloat();
 
     // Manopola: il suo centro sta sotto al display, l'incavo "morde" il bordo inferiore
