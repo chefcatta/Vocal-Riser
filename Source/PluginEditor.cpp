@@ -486,7 +486,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
         buttonAtts.push_back (std::make_unique<ButtonAtt> (apvts, fxIds[i], b));
     }
 
-    setSize (460, 586);
+    setSize (460, 600);
     timerCallback();
     startTimerHz (60);
 }
@@ -605,14 +605,17 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     {
         const auto sigFont = labelFont (8.0f, 0.35f);
         const juce::String sig ("CHEF CATTA DSP");
-        const float tw = juce::GlyphArrangement::getStringWidth (sigFont, sig);
-        const float logo = 16.0f, gap = 7.0f;
-        const float x0 = shellR.getCentreX() - (logo + gap + tw) * 0.5f;
-        const float cy = shellR.getBottom() - 15.0f;
-        drawChefLogo (g, { x0, cy - logo * 0.5f - 1.0f, logo, logo }, Colours::dim, Colours::accent2);
+        const float tw    = juce::GlyphArrangement::getStringWidth (sigFont, sig);
+        const float chefW = juce::GlyphArrangement::getStringWidth (sigFont, "CHEF") - 8.0f * 0.35f; // senza la spaziatura finale
+        const float x0    = shellR.getCentreX() - tw * 0.5f;
+        const float textY = shellR.getBottom() - 20.0f;
+
+        // il cappello "indossato" dalla parola CHEF
+        const float logo = 15.0f;
+        drawChefLogo (g, { x0 + chefW * 0.5f - logo * 0.5f, textY - logo + 1.0f, logo, logo }, Colours::dim, Colours::accent2);
+
         g.setFont (sigFont);
-        engravedText (g, sig, { x0 + logo + gap, cy - 6.0f, tw + 4.0f, 12.0f },
-                      juce::Justification::centredLeft, Colours::dim);
+        engravedText (g, sig, { x0, textY, tw + 4.0f, 12.0f }, juce::Justification::centredLeft, Colours::dim);
     }
 }
 
