@@ -72,10 +72,10 @@ private:
     RiserLookAndFeel lnf;
 
     RiserWaveView wave;
-    juce::TextButton captureBtn { "CATTURA" }, loopBtn { "LOOP" }, saveBtn { "SALVA" };
+    juce::TextButton captureBtn { "CATTURA" }, loopBtn { "LOOP" }, saveBtn { "SALVA" }, resetBtn { "RESET" };
 
     juce::Slider amountKnob;
-    ArrowSelector lengthSel, reverbSel;
+    ArrowSelector lengthSel, reverbSel, timingSel;
     juce::TextButton stereoBtn { "STEREO" };
     std::array<juce::TextButton, 4> fxBtns;
 
@@ -83,6 +83,9 @@ private:
     std::vector<std::unique_ptr<ButtonAtt>> buttonAtts;
 
     juce::Rectangle<int> displayArea, knobArea;
+    juce::Path displayShape;                 // display con l'incavo per la manopola
+    juce::Point<float> knobCentre;
+    float notchRadius = 0.0f;
     juce::String lastStatus;
     bool lastPreviewPlaying = false;
     int lastSourceStereo = -2;

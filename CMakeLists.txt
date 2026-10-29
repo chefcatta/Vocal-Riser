@@ -25,7 +25,8 @@ else()
 endif()
 
 juce_add_plugin(VocalRiser
-    COMPANY_NAME "VocalRiser"
+    COMPANY_NAME "fra catta dsp"
+    BUNDLE_ID "com.fracattadsp.vocalriser"
     PLUGIN_MANUFACTURER_CODE Vrsr
     PLUGIN_CODE Vrs1
     FORMATS AU VST3 Standalone

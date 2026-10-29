@@ -45,6 +45,13 @@ public:
 
     //== Cattura (chiamate dal message thread) ==================================
     void armCapture()               { captureState.store (stateArmed); }
+    void resetParameters()
+    {
+        for (auto* prm : getParameters())
+            if (auto* r = dynamic_cast<juce::RangedAudioParameter*> (prm))
+                r->setValueNotifyingHost (r->getDefaultValue());
+        previewLoop.store (false);
+    }
     int  getCaptureState() const    { return captureState.load(); }
     bool hasCapture() const         { return captureCounter.load() > 0; }
     int  getSourceStereo() const    { return sourceStereo.load(); } // -1 = nessuna cattura, 0 = mono, 1 = stereo
@@ -70,6 +77,7 @@ private:
     std::atomic<float>* pFilterOn = nullptr; std::atomic<float>* pStutOn = nullptr;
     std::atomic<float>* pPhoneOn = nullptr;  std::atomic<float>* pChorusOn = nullptr;
     std::atomic<float>* pRevType = nullptr;  std::atomic<float>* pStereoOn = nullptr;
+    std::atomic<float>* pStutRate = nullptr;
 
     double sr = 44100.0;
 

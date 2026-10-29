@@ -1,4 +1,4 @@
-# Vocal Riser
+# Vocal Riser — fra catta dsp
 
 Plugin (AU / VST3) per creare riser sulle voci in pochi secondi, direttamente in sessione.
 Il plugin **non modifica la traccia**: ascolta la voce, genera il riser e te lo fa trascinare nella timeline.
@@ -11,6 +11,8 @@ Il plugin **non modifica la traccia**: ascolta la voce, genera il riser e te lo 
 4. Accendi **LOOP**: quando la DAW è ferma, il plugin suona il riser in loop così lo regoli a orecchio. In Logic tieni selezionata la traccia, altrimenti a trasporto fermo Logic non fa lavorare il plugin.
 5. **Trascina la forma d'onda** su una traccia audio: il riser finisce esattamente dove attacca la voce, quindi allinea la **fine** della clip all'inizio della frase.
 
+**RESET** riporta tutti i controlli ai valori iniziali (il riser catturato resta).
+
 **SALVA** scrive il WAV (24 bit) in `Documenti/Vocal Riser` e apre la cartella: utile se la tua DAW non accetta il trascinamento dal plugin.
 
 ### Cosa fanno i pulsanti
@@ -18,7 +20,7 @@ Il plugin **non modifica la traccia**: ascolta la voce, genera il riser e te lo 
 | Pulsante | Effetto |
 |---|---|
 | FILTRO | Passa-alto che si apre durante il riser |
-| STUTTER | Ripetizioni a 1/16, costanti su tutto il riser e allineate all'attacco della voce |
+| STUTTER | Ripetizioni costanti su tutto il riser, allineate all'attacco della voce. Il **TIMING** si sceglie tra 1/4, 1/8, 1/16 e 1/32 |
 | PHONE | Suono "telefono" (banda stretta + saturazione) |
 | CHORUS | Allarga e rende più morbida la coda |
 | RIVERBERO | **HALL** (sala ampia, il suono originale), **PLATE** (denso e brillante), **SPACE** (coda enorme, scura e morbida) |

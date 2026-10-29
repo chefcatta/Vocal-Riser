@@ -7,7 +7,7 @@ namespace
     const double      beatsTable[]  = { 1.0, 2.0, 4.0, 8.0 };            // 1/4, 1/2, 1, 2 battute (4/4)
     const char* const lengthNames[] = { "1-4bar", "1-2bar", "1bar", "2bar" };
     const char* const renderParams[] = { "amount", "length", "filterOn", "stutOn", "phoneOn", "chorusOn",
-                                         "revType", "stereoOn" };
+                                         "revType", "stereoOn", "stutRate" };
     constexpr float thresholdGain = 0.0056f; // ~ -45 dBFS
 
     // Trova dove finisce la prima parola: l'inviluppo scende sotto -12 dB
@@ -109,6 +109,7 @@ VocalRiserAudioProcessor::VocalRiserAudioProcessor()
     pChorusOn = apvts.getRawParameterValue ("chorusOn");
     pRevType  = apvts.getRawParameterValue ("revType");
     pStereoOn = apvts.getRawParameterValue ("stereoOn");
+    pStutRate = apvts.getRawParameterValue ("stutRate");
 
     for (auto* id : renderParams)
         apvts.addParameterListener (id, this);
@@ -138,6 +139,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout VocalRiserAudioProcessor::cr
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "revType", 1 }, "Riverbero",
                                                          StringArray { "Hall", "Plate", "Space" }, 0));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stereoOn", 1 }, "Mono -> Stereo", false));
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "stutRate", 1 }, "Timing Stutter",
+                                                         StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
 
     return { p.begin(), p.end() };
 }
@@ -442,7 +445,8 @@ void VocalRiserAudioProcessor::renderRiser()
     const float fMax     = 200.0f * std::pow (10.0f, amount);   // 200 Hz -> 2 kHz
     const float volRange = 4.0f + 14.0f * amount;
     const float gateCoeff = 1.0f - std::exp (-1.0f / (0.0015f * (float) rate));
-    const double stutPeriod = secPerBeat * rate / 4.0;   // 1/16 costante, a tempo
+    static constexpr double stutDiv[] = { 1.0, 0.5, 0.25, 0.125 };   // 1/4, 1/8, 1/16, 1/32
+    const double stutPeriod = secPerBeat * rate * stutDiv[jlimit (0, 3, (int) pStutRate->load())];
     float gate = 1.0f;
 
     for (int j = 0; j < Ls; ++j)
