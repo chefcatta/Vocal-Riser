@@ -5,8 +5,7 @@ namespace
 {
     const double      beatsTable[]  = { 1.0, 2.0, 4.0, 8.0 };            // 1/4, 1/2, 1, 2 battute (4/4)
     const char* const lengthNames[] = { "1-4bar", "1-2bar", "1bar", "2bar" };
-    const char* const renderParams[] = { "amount", "length", "pitchOn", "filterOn",
-                                         "stutOn", "phoneOn", "chorusOn", "revDryOn" };
+    const char* const renderParams[] = { "amount", "length", "filterOn", "stutOn", "phoneOn", "chorusOn" };
     constexpr float thresholdGain = 0.0056f; // ~ -45 dBFS
 
     // Trova dove finisce la prima parola: l'inviluppo scende sotto -12 dB
@@ -50,6 +49,47 @@ namespace
         }
         return juce::jmax (1, maxWord); // nota lunga senza pause: tieni al massimo 1,2 s
     }
+
+    // Time-stretch granulare (senza cambiare intonazione): allunga src fino a outLen campioni.
+    // Le posizioni dei grani sono le stesse per tutti i canali, cosi l'immagine stereo resta stabile.
+    void stretchGranular (const juce::AudioBuffer<float>& src, int srcLen, juce::AudioBuffer<float>& dst, int outLen, double sr)
+    {
+        dst.setSize (src.getNumChannels(), outLen, false, false, true);
+        dst.clear();
+        if (srcLen < 8 || outLen < 8) return;
+
+        const int grain = juce::jlimit (64, juce::jmax (64, srcLen), (int) (0.07 * sr));
+        const int hop   = juce::jmax (1, grain / 4);
+        std::vector<float> win ((size_t) grain), norm ((size_t) outLen, 0.0f);
+        for (int i = 0; i < grain; ++i)
+            win[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / (float) (grain - 1));
+
+        juce::Random rng (12345);
+        const double span = (double) juce::jmax (0, srcLen - grain);
+        const double outSpan = (double) juce::jmax (1, outLen - grain);
+
+        for (int o = 0; o < outLen; o += hop)
+        {
+            const double prog = juce::jmin (1.0, (double) o / outSpan);
+            const int jitter  = (int) ((rng.nextFloat() - 0.5f) * 0.3f * (float) grain);
+            const int in      = juce::jlimit (0, (int) span, (int) (prog * span) + jitter);
+            const int len     = juce::jmin (grain, outLen - o, srcLen - in);
+
+            for (int ch = 0; ch < src.getNumChannels(); ++ch)
+            {
+                const float* s = src.getReadPointer (ch, in);
+                float* d = dst.getWritePointer (ch, o);
+                for (int i = 0; i < len; ++i) d[i] += s[i] * win[(size_t) i];
+            }
+            for (int i = 0; i < len; ++i) norm[(size_t) (o + i)] += win[(size_t) i];
+        }
+
+        for (int ch = 0; ch < dst.getNumChannels(); ++ch)
+        {
+            float* d = dst.getWritePointer (ch);
+            for (int i = 0; i < outLen; ++i) d[i] /= juce::jmax (0.5f, norm[(size_t) i]);
+        }
+    }
 }
 
 //==============================================================================
@@ -61,13 +101,10 @@ VocalRiserAudioProcessor::VocalRiserAudioProcessor()
 {
     pAmount   = apvts.getRawParameterValue ("amount");
     pLength   = apvts.getRawParameterValue ("length");
-    pPitchOn  = apvts.getRawParameterValue ("pitchOn");
     pFilterOn = apvts.getRawParameterValue ("filterOn");
     pStutOn   = apvts.getRawParameterValue ("stutOn");
     pPhoneOn  = apvts.getRawParameterValue ("phoneOn");
     pChorusOn = apvts.getRawParameterValue ("chorusOn");
-    pRevDryOn = apvts.getRawParameterValue ("revDryOn");
-    pAutoArm  = apvts.getRawParameterValue ("autoArm");
 
     for (auto* id : renderParams)
         apvts.addParameterListener (id, this);
@@ -90,13 +127,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout VocalRiserAudioProcessor::cr
                                                             [] (float v, int) { return String (roundToInt (v * 100.0f)) + " %"; })));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "length", 1 }, "Durata",
                                                          StringArray { "1/4 BAR", "1/2 BAR", "1 BAR", "2 BAR" }, 1));
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "pitchOn", 1 },  "Pitch",   true));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "filterOn", 1 }, "Filtro",  true));
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stutOn", 1 },   "Stutter", false));
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stutOn", 1 },   "Stutter", true));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "phoneOn", 1 },  "Phone",   false));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "chorusOn", 1 }, "Chorus",  false));
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "revDryOn", 1 }, "Reverse", true));
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "autoArm", 1 },  "Auto Cattura", true));
 
     return { p.begin(), p.end() };
 }
@@ -164,10 +198,6 @@ void VocalRiserAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     int state = captureState.load();
 
-    // Auto-cattura: ogni volta che parte il play, cattura la prima frase che arriva
-    if (playing && ! wasPlaying && pAutoArm->load() > 0.5f && state != stateRecording)
-        state = stateArmed;
-
     if (! playing && wasPlaying && state == stateRecording)
         finishCapture (state);
 
@@ -217,29 +247,34 @@ void VocalRiserAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     captureState.store (state);
 
-    // --- Anteprima del riser ----------------------------------------------
-    if (previewOn.load())
+    // --- Anteprima in loop: solo quando il trasporto della DAW e fermo -------
+    bool playingPreview = false;
+    if (previewLoop.load() && ! playing)
     {
         const juce::SpinLock::ScopedTryLockType lock (previewLock);
         if (lock.isLocked() && previewBuf != nullptr && previewBuf->getNumSamples() > 0)
         {
-            if (previewRestart.exchange (false)) previewPos = 0;
             const int len = previewBuf->getNumSamples();
+            const int gap = (int) (60.0 / bpm * sr);          // un beat di pausa tra una ripetizione e l'altra
+            const int cycle = len + gap;
 
             for (int i = 0; i < n; ++i)
             {
-                if (previewPos >= len)
-                {
-                    if (previewLoop.load()) previewPos = 0;
-                    else { previewOn.store (false); break; }
-                }
-                for (int ch = 0; ch < numOut; ++ch)
-                    buffer.addSample (ch, i, previewBuf->getSample (juce::jmin (ch, 1), previewPos));
+                if (previewPos >= cycle) previewPos = 0;
+                if (previewPos < len)
+                    for (int ch = 0; ch < numOut; ++ch)
+                        buffer.addSample (ch, i, previewBuf->getSample (juce::jmin (ch, 1), previewPos));
                 ++previewPos;
             }
-            previewProgress.store ((float) previewPos / (float) len);
+            playingPreview = true;
+            previewProgress.store (juce::jmin (1.0f, (float) previewPos / (float) len));
         }
     }
+    else
+    {
+        previewPos = 0; // al prossimo stop riparte dall'inizio
+    }
+    previewPlaying.store (playingPreview);
 }
 
 //==============================================================================
@@ -283,22 +318,35 @@ void VocalRiserAudioProcessor::renderRiser()
     const int    wordLen    = findFirstWordLength (cap, capLen, capCh, rate);
     // Solo la prima parte della prima parola (l'attacco): 40% della parola, tra 80 e 250 ms
     const int    attackLen  = jlimit ((int) (0.08 * rate), (int) (0.25 * rate), (int) (wordLen * 0.4));
-    const int    seg        = jmax (1, jmin (wordLen, attackLen, Ls));
+    int          seg        = jmax (1, jmin (wordLen, attackLen, Ls));
 
-    // 1) Inizio della frase, rovesciato
+    // 1) Attacco della prima parola (saltando il silenzio iniziale, cosi lo stretch non lo allunga)
+    int onset = 0;
+    {
+        const float pk = cap.getMagnitude (0, jmin (capLen, seg * 2));
+        const float* d0 = cap.getReadPointer (0);
+        while (onset < seg / 2 && std::abs (d0[onset]) < pk * 0.2f) ++onset;
+        onset = jmax (0, onset - (int) (0.003 * rate));
+    }
+    seg = jmin (seg, capLen - onset);
+    AudioBuffer<float> attack (2, seg);
+    for (int ch = 0; ch < 2; ++ch)
+        attack.copyFrom (ch, 0, cap, jmin (ch, capCh - 1), onset, seg);
+    const int edge = jmin (seg / 3, (int) (0.02 * rate));
+    for (int ch = 0; ch < 2; ++ch) attack.applyGainRamp (ch, seg - edge, edge, 1.0f, 0.0f);
+
+    // 2) Attacco rovesciato -> eco a tempo + riverbero 100% wet (nessun segnale dry)
     AudioBuffer<float> rev (2, seg);
     for (int ch = 0; ch < 2; ++ch)
     {
-        const float* src = cap.getReadPointer (jmin (ch, capCh - 1));
+        const float* src = attack.getReadPointer (ch);
         float* dst = rev.getWritePointer (ch);
         for (int j = 0; j < seg; ++j) dst[j] = src[seg - 1 - j];
     }
-    // la fine della parola (ora all'inizio) entra morbida
-    const int wordFade = jmin (seg / 3, (int) (0.02 * rate));
-    for (int ch = 0; ch < 2; ++ch) rev.applyGainRamp (ch, 0, wordFade, 0.0f, 1.0f);
 
-    // 2) Eco a tempo + riverbero (solo wet) sulla voce rovesciata
-    const int total = seg + Ls;
+    // Coda naturale: lunga quanto il riser ma al massimo ~1,6 s; il resto lo fa lo stretch
+    const int tailLen = jmin (Ls, (int) ((0.8 + 0.8 * amount) * rate));
+    const int total   = seg + tailLen;
     AudioBuffer<float> wet (2, total);
     wet.clear();
     for (int ch = 0; ch < 2; ++ch) wet.copyFrom (ch, 0, rev, ch, 0, seg);
@@ -315,24 +363,29 @@ void VocalRiserAudioProcessor::renderRiser()
     Reverb rv;
     rv.setSampleRate (rate);
     Reverb::Parameters rp;
-    rp.roomSize   = jmin (0.985f, 0.80f + 0.16f * amount + (lenIdx >= 2 ? 0.04f * (float) (lenIdx - 1) : 0.0f));
+    rp.roomSize   = jmin (0.985f, 0.80f + 0.16f * amount);
     rp.damping    = 0.35f;
     rp.wetLevel   = 0.33f;
-    rp.dryLevel   = 0.0f;
+    rp.dryLevel   = 0.0f;   // solo coda
     rp.width      = 1.0f;
     rp.freezeMode = 0.0f;
     rv.setParameters (rp);
     for (int pos = 0; pos < total; pos += 512)
         rv.processStereo (wet.getWritePointer (0) + pos, wet.getWritePointer (1) + pos, jmin (512, total - pos));
 
-    // 3) Coda rovesciata: il riser finisce esattamente dove parte la voce
-    AudioBuffer<float> out (2, Ls);
+    // 3) Solo la coda (dopo la fine della voce), rovesciata
+    AudioBuffer<float> tail (2, tailLen);
     for (int ch = 0; ch < 2; ++ch)
     {
         const float* w = wet.getReadPointer (ch);
-        float* o = out.getWritePointer (ch);
-        for (int j = 0; j < Ls; ++j) o[j] = w[seg + Ls - 1 - j];
+        float* t = tail.getWritePointer (ch);
+        for (int j = 0; j < tailLen; ++j) t[j] = w[seg + tailLen - 1 - j];
     }
+
+    // 4) Stretch della coda fino alla durata del riser
+    AudioBuffer<float> out;
+    if (tailLen < Ls) stretchGranular (tail, tailLen, out, Ls, rate);
+    else              out.makeCopyOf (tail);
 
     auto normalise = [] (AudioBuffer<float>& b, float targetPeak)
     {
@@ -341,46 +394,7 @@ void VocalRiserAudioProcessor::renderRiser()
     };
     normalise (out, 0.5f);
 
-    // 4) Voce rovesciata sotto al riverbero
-    if (pRevDryOn->load() > 0.5f)
-    {
-        const float revMag = rev.getMagnitude (0, seg);
-        const float g = revMag > 1.0e-6f ? 0.35f / revMag : 0.0f;
-        for (int ch = 0; ch < 2; ++ch)
-            out.addFrom (ch, Ls - seg, rev, ch, 0, seg, g);
-    }
-
-    // 5) Pitch che sale (con compensazione della latenza)
-    if (pPitchOn->load() > 0.5f)
-    {
-        PitchShifter ps[2];
-        ps[0].prepare (rate); ps[1].prepare (rate);
-        const int lat = ps[0].getLatency();
-        const float semisMax = 5.0f + 7.0f * amount;
-
-        AudioBuffer<float> shifted (2, Ls);
-        for (int j = 0; j < Ls + lat; ++j)
-        {
-            const float p     = (float) jmin (j, Ls - 1) / (float) (Ls - 1);
-            const float semis = semisMax * p;
-            const float ratio = std::exp2 (semis / 12.0f);
-            const float mix   = jlimit (0.0f, 1.0f, semis / 0.3f);
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                const float x = j < Ls ? out.getSample (ch, j) : 0.0f;
-                const float y = ps[ch].process (x, ratio);
-                const int o = j - lat;
-                if (o >= 0)
-                {
-                    const float dry = out.getSample (ch, o);
-                    shifted.setSample (ch, o, dry + mix * (y - dry));
-                }
-            }
-        }
-        out.makeCopyOf (shifted, true);
-    }
-
-    // 6) Filtro, phone, stutter, crescendo
+    // 5) Filtro, phone, stutter, crescendo
     dsp::ProcessSpec spec { rate, 512, 2 };
     dsp::StateVariableTPTFilter<float> hp, phHp, phLp;
     hp.prepare (spec);   hp.setType (dsp::StateVariableTPTFilterType::highpass);  hp.setResonance (1.1f);
@@ -393,6 +407,7 @@ void VocalRiserAudioProcessor::renderRiser()
     const float fMax     = 200.0f * std::pow (10.0f, amount);   // 200 Hz -> 2 kHz
     const float volRange = 4.0f + 14.0f * amount;
     const float gateCoeff = 1.0f - std::exp (-1.0f / (0.0015f * (float) rate));
+    const double stutPeriod = secPerBeat * rate / 4.0;   // 1/16 costante, a tempo
     float gate = 1.0f;
 
     for (int j = 0; j < Ls; ++j)
@@ -402,15 +417,13 @@ void VocalRiserAudioProcessor::renderRiser()
         if (filterOn && (j & 15) == 0)
             hp.setCutoffFrequency (20.0f * std::pow (fMax / 20.0f, p));
 
+        // Stutter costante su tutto il riser, allineato alla fine (attacco della voce)
         float gateTarget = 1.0f;
-        if (stutOn && p > 0.55f)
+        if (stutOn)
         {
-            const float  q      = (p - 0.55f) / 0.45f;
-            const int    k      = jmin (2, (int) (q * 3.0f));   // 1/8 -> 1/16 -> 1/32
-            const double period = 0.5 / (double) (1 << k);
-            double ph = (j / (secPerBeat * rate)) / period;
+            double ph = (double) (Ls - 1 - j) / stutPeriod;
             ph -= std::floor (ph);
-            gateTarget = ph < 0.6 ? 1.0f : 0.0f;
+            gateTarget = ph < 0.55 ? 1.0f : 0.0f;
         }
         gate += gateCoeff * (gateTarget - gate);
 
@@ -442,7 +455,7 @@ void VocalRiserAudioProcessor::renderRiser()
         }
     }
 
-    // 7) Normalizza a -1 dBFS e micro-fade
+    // 5) Normalizza a -1 dBFS e micro-fade
     normalise (out, Decibels::decibelsToGain (-1.0f));
     const int fadeIn = jmin (Ls / 4, (int) (0.01 * rate));
     const int fadeOut = jmin (Ls / 4, (int) (0.002 * rate));

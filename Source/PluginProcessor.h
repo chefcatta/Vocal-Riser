@@ -8,59 +8,6 @@
 #include <vector>
 
 //==============================================================================
-// Pitch shifter granulare a due testine
-class PitchShifter
-{
-public:
-    void prepare (double sampleRate)
-    {
-        int size = 1;
-        while (size < (int) (0.2 * sampleRate)) size <<= 1;
-        buffer.assign ((size_t) size, 0.0f);
-        mask = size - 1;
-        writePos = 0;
-        phase = 0.0f;
-        window = (float) (0.05 * sampleRate); // finestra da 50 ms
-    }
-
-    int getLatency() const { return (int) (window * 0.5f) + 2; }
-
-    float process (float x, float ratio)
-    {
-        buffer[(size_t) writePos] = x;
-
-        phase += (1.0f - ratio) / window;
-        phase -= std::floor (phase);
-
-        float phase2 = phase + 0.5f;
-        if (phase2 >= 1.0f) phase2 -= 1.0f;
-
-        const float s  = std::sin (juce::MathConstants<float>::pi * phase);
-        const float g1 = s * s;
-        const float y  = read (2.0f + phase  * window) * g1
-                       + read (2.0f + phase2 * window) * (1.0f - g1);
-
-        writePos = (writePos + 1) & mask;
-        return y;
-    }
-
-private:
-    float read (float delay) const
-    {
-        const float rp = (float) writePos - delay + (float) (mask + 1);
-        const int   i0 = (int) rp;
-        const float fr = rp - (float) i0;
-        const float a  = buffer[(size_t) (i0 & mask)];
-        const float b  = buffer[(size_t) ((i0 + 1) & mask)];
-        return a + fr * (b - a);
-    }
-
-    std::vector<float> buffer;
-    int mask = 0, writePos = 0;
-    float phase = 0.0f, window = 1.0f;
-};
-
-//==============================================================================
 class VocalRiserAudioProcessor : public juce::AudioProcessor,
                                  private juce::AudioProcessorValueTreeState::Listener
 {
@@ -108,10 +55,9 @@ public:
     juce::String getRenderInfo() const   { return renderInfo; }
     juce::File writeRiserFile();         // scrive il WAV (una volta per render)
 
-    //== Anteprima =============================================================
-    void startPreview()  { previewRestart.store (true); previewOn.store (true); }
-    void stopPreview()   { previewOn.store (false); }
-    std::atomic<bool>  previewOn { false }, previewLoop { false };
+    //== Anteprima in loop (suona solo a trasporto fermo) =====================
+    std::atomic<bool>  previewLoop { false };     // pulsante LOOP
+    std::atomic<bool>  previewPlaying { false };  // per l'interfaccia
     std::atomic<float> previewProgress { 0.0f };
 
 private:
@@ -119,11 +65,9 @@ private:
     void renderRiser();
     void finishCapture (int& state);
 
-    std::atomic<float>* pAmount = nullptr; std::atomic<float>* pLength = nullptr;
-    std::atomic<float>* pPitchOn = nullptr; std::atomic<float>* pFilterOn = nullptr;
-    std::atomic<float>* pStutOn = nullptr;  std::atomic<float>* pPhoneOn = nullptr;
-    std::atomic<float>* pChorusOn = nullptr; std::atomic<float>* pRevDryOn = nullptr;
-    std::atomic<float>* pAutoArm = nullptr;
+    std::atomic<float>* pAmount = nullptr;  std::atomic<float>* pLength = nullptr;
+    std::atomic<float>* pFilterOn = nullptr; std::atomic<float>* pStutOn = nullptr;
+    std::atomic<float>* pPhoneOn = nullptr;  std::atomic<float>* pChorusOn = nullptr;
 
     double sr = 44100.0;
 
@@ -155,7 +99,6 @@ private:
     juce::SpinLock previewLock;
     std::unique_ptr<juce::AudioBuffer<float>> previewBuf;
     int previewPos = 0;
-    std::atomic<bool> previewRestart { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VocalRiserAudioProcessor)
 };

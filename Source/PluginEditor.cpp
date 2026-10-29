@@ -360,7 +360,7 @@ void RiserWaveView::paint (juce::Graphics& g)
         g.fillPath (wave);
 
         // Playhead anteprima
-        if (proc.previewOn.load())
+        if (proc.previewPlaying.load())
         {
             const float px = inner.getX() + inner.getWidth() * proc.previewProgress.load();
             g.setColour (Colours::accent2.withAlpha (0.3f));
@@ -411,17 +411,16 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
 
     // Trasporto del riser
     captureBtn.getProperties().set ("icon", "rec");
-    listenBtn.getProperties().set ("icon", "play");
     loopBtn.getProperties().set ("icon", "loop");
     saveBtn.getProperties().set ("icon", "save");
 
+    captureBtn.setTooltip ("Premi CATTURA, poi play: il plugin ascolta la prossima frase");
     captureBtn.onClick = [this] { proc.armCapture(); updateStatus(); };
-    listenBtn.onClick  = [this]
-    {
-        if (proc.previewOn.load()) proc.stopPreview();
-        else if (proc.hasRender()) proc.startPreview();
-    };
+
+    // LOOP: a trasporto fermo il plugin suona l'anteprima del riser in loop
+    loopBtn.setTooltip ("Con la DAW ferma suona il riser in loop");
     loopBtn.setClickingTogglesState (true);
+    loopBtn.setToggleState (proc.previewLoop.load(), juce::dontSendNotification);
     loopBtn.onClick = [this] { proc.previewLoop.store (loopBtn.getToggleState()); };
     saveBtn.onClick = [this]
     {
@@ -429,12 +428,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
         if (f.existsAsFile()) f.revealToUser();
     };
 
-    autoBtn.getProperties().set ("style", "led");
-    autoBtn.setClickingTogglesState (true);
-    autoBtn.setTooltip ("Cattura automaticamente la prima frase ogni volta che premi play");
-    buttonAtts.push_back (std::make_unique<ButtonAtt> (apvts, "autoArm", autoBtn));
-
-    for (auto* b : { &captureBtn, &listenBtn, &loopBtn, &saveBtn, &autoBtn })
+    for (auto* b : { &captureBtn, &loopBtn, &saveBtn })
         addAndMakeVisible (*b);
 
     // Manopola principale
@@ -463,10 +457,10 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
         addAndMakeVisible (b);
     }
 
-    // Effetti: tasti con icona di accensione
-    const char* fxNames[] = { "PITCH", "FILTRO", "STUTTER", "PHONE", "CHORUS", "REVERSE" };
-    const char* fxIds[]   = { "pitchOn", "filterOn", "stutOn", "phoneOn", "chorusOn", "revDryOn" };
-    for (int i = 0; i < 6; ++i)
+    // Effetti
+    const char* fxNames[] = { "FILTRO", "STUTTER", "PHONE", "CHORUS" };
+    const char* fxIds[]   = { "filterOn", "stutOn", "phoneOn", "chorusOn" };
+    for (int i = 0; i < 4; ++i)
     {
         auto& b = fxBtns[(size_t) i];
         b.setButtonText (fxNames[i]);
@@ -494,7 +488,9 @@ void VocalRiserAudioProcessorEditor::updateStatus()
     {
         case VocalRiserAudioProcessor::stateArmed:     s = "IN ASCOLTO..."; break;
         case VocalRiserAudioProcessor::stateRecording: s = "CATTURA IN CORSO"; break;
-        default: s = proc.hasRender() ? "PRONTO" : "PREMI PLAY O CATTURA"; break;
+        default: s = ! proc.hasRender()            ? "PREMI CATTURA, POI PLAY"
+                   : proc.previewPlaying.load()   ? "LOOP IN ANTEPRIMA"
+                                                  : "PRONTO"; break;
     }
     if (s != wave.status) { wave.status = s; wave.repaint(); }
 }
@@ -553,9 +549,8 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
         p.addRoundedRectangle (b.getBounds().toFloat().reduced (3.0f, 4.0f), 8.0f);
         softRaise (g, p, 4.0f);
     };
-    for (auto* b : { &captureBtn, &listenBtn, &loopBtn, &saveBtn })
+    for (auto* b : { &captureBtn, &loopBtn, &saveBtn })
         if (! b->getToggleState()) keyShadow (*b);
-    if (! autoBtn.getToggleState()) keyShadow (autoBtn);
 
     // Scanalatura del selettore durata
     const auto lenRow = lengthBtns[0].getBounds().getUnion (lengthBtns[3].getBounds()).toFloat();
@@ -566,7 +561,7 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawText ("DURATA (BAR)", lenRow.getX(), lenRow.getY() - 19.0f, lenRow.getWidth(), 14.0f, juce::Justification::centred);
 
     // Vassoio incassato per gli effetti
-    const auto fxTray = fxBtns[0].getBounds().getUnion (fxBtns[5].getBounds()).toFloat().expanded (8.0f, 8.0f);
+    const auto fxTray = fxBtns[0].getBounds().getUnion (fxBtns[3].getBounds()).toFloat().expanded (8.0f, 8.0f);
     softInset (g, fxTray, 12.0f, 6.0f, juce::Colour (0xff18191d));
     for (auto& b : fxBtns) if (! b.getToggleState()) keyShadow (b);
 }
@@ -575,31 +570,30 @@ void VocalRiserAudioProcessorEditor::resized()
 {
     auto r = getLocalBounds().reduced (30, 26);
 
-    auto header = r.removeFromTop (30);
-    autoBtn.setBounds (header.removeFromRight (84).withSizeKeepingCentre (84, 40));
+    r.removeFromTop (30); // titolo
 
     r.removeFromTop (12);
     wave.setBounds (r.removeFromTop (140));
 
     r.removeFromTop (12);
     auto transport = r.removeFromTop (36);
-    const int tw = (transport.getWidth() - 3 * 8) / 4;
-    for (auto* b : { &captureBtn, &listenBtn, &loopBtn, &saveBtn })
+    const int tw = (transport.getWidth() - 2 * 10) / 3;
+    for (auto* b : { &captureBtn, &loopBtn, &saveBtn })
     {
         b->setBounds (transport.removeFromLeft (tw));
-        transport.removeFromLeft (8);
+        transport.removeFromLeft (10);
     }
 
     // Vassoio effetti (2 righe)
     auto fxArea = r.removeFromBottom (82).reduced (10, 6);
     auto fxRow1 = fxArea.removeFromTop (36);
     auto fxRow2 = fxArea.withTrimmedTop (fxArea.getHeight() - 36);
-    const int fw = (fxRow1.getWidth() - 2 * 6) / 3;
-    for (int i = 0; i < 6; ++i)
+    const int fw = (fxRow1.getWidth() - 8) / 2;
+    for (int i = 0; i < 4; ++i)
     {
-        auto& row = i < 3 ? fxRow1 : fxRow2;
+        auto& row = i < 2 ? fxRow1 : fxRow2;
         fxBtns[(size_t) i].setBounds (row.removeFromLeft (fw));
-        row.removeFromLeft (6);
+        row.removeFromLeft (8);
     }
 
     r.removeFromBottom (18);
@@ -620,15 +614,13 @@ void VocalRiserAudioProcessorEditor::timerCallback()
     if (proc.updateRender())
         wave.repaint();
 
-    if (proc.previewOn.load())
+    const bool playingPreview = proc.previewPlaying.load();
+    if (playingPreview || playingPreview != lastPreviewPlaying)
         wave.repaint();
+    lastPreviewPlaying = playingPreview;
 
     updateStatus();
 
-    const bool playingPreview = proc.previewOn.load();
-    listenBtn.setButtonText (playingPreview ? "STOP" : "ASCOLTA");
-    listenBtn.getProperties().set ("icon", playingPreview ? "stop" : "play");
-    listenBtn.setEnabled (proc.hasRender());
     saveBtn.setEnabled (proc.hasRender());
     const bool capturing = proc.getCaptureState() != VocalRiserAudioProcessor::stateIdle;
     if (captureBtn.getToggleState() != capturing)
@@ -637,7 +629,7 @@ void VocalRiserAudioProcessorEditor::timerCallback()
         repaint (captureBtn.getBounds().expanded (12));
     }
     // Ridisegna le ombre quando un tasto cambia stato
-    int mask = (loopBtn.getToggleState() ? 1 : 0) | (autoBtn.getToggleState() ? 2 : 0);
+    int mask = loopBtn.getToggleState() ? 1 : 0;
     for (size_t i = 0; i < fxBtns.size(); ++i)
         if (fxBtns[i].getToggleState()) mask |= 4 << i;
     if (mask != lastToggleMask) { lastToggleMask = mask; repaint(); }

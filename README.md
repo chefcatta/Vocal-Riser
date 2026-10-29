@@ -6,9 +6,9 @@ Il plugin **non modifica la traccia**: ascolta la voce, genera il riser e te lo 
 ## Come si usa
 
 1. Metti **Vocal Riser** come insert sulla traccia della voce.
-2. Porta il playhead poco prima della frase e premi **play** (con **AUTO** acceso cattura da solo la prima frase che sente). In alternativa premi **CATTURA**.
+2. Premi **CATTURA**, porta il playhead poco prima della frase e premi **play**: il plugin ascolta la frase.
 3. Gira la manopola **INTENSITÀ** e scegli la **DURATA** (1/4, 1/2, 1 o 2 battute, a tempo col progetto).
-4. **ASCOLTA** (anche in **LOOP**) per sentire il risultato.
+4. Accendi **LOOP**: quando la DAW è ferma, il plugin suona il riser in loop così lo regoli a orecchio. In Logic tieni selezionata la traccia, altrimenti a trasporto fermo Logic non fa lavorare il plugin.
 5. **Trascina la forma d'onda** su una traccia audio: il riser finisce esattamente dove attacca la voce, quindi allinea la **fine** della clip all'inizio della frase.
 
 **SALVA** scrive il WAV (24 bit) in `Documenti/Vocal Riser` e apre la cartella: utile se la tua DAW non accetta il trascinamento dal plugin.
@@ -17,16 +17,14 @@ Il plugin **non modifica la traccia**: ascolta la voce, genera il riser e te lo 
 
 | Pulsante | Effetto |
 |---|---|
-| PITCH | La coda sale di tono fino all'attacco (5–12 semitoni, in base all'intensità) |
 | FILTRO | Passa-alto che si apre durante il riser |
-| STUTTER | Ripetizioni a tempo che accelerano nell'ultimo tratto (1/8 → 1/32) |
+| STUTTER | Ripetizioni a 1/16, costanti su tutto il riser e allineate all'attacco della voce |
 | PHONE | Suono "telefono" (banda stretta + saturazione) |
 | CHORUS | Allarga e rende più morbida la coda |
-| REVERSE | Aggiunge la voce al contrario sotto al riverbero |
 
-Il plugin ascolta tutta la frase ma usa **solo la prima parte della prima parola** (l'attacco): trova da solo dove finisce la prima parola (prima pausa o primo calo netto di volume) e ne prende il primo 40%, tra 80 e 250 ms. La durata usata compare in alto a sinistra sullo schermo ("attacco").
+Il plugin ascolta tutta la frase ma usa **solo la prima parte della prima parola** (l'attacco): trova da solo dove finisce la prima parola e ne prende il primo 40%, tra 80 e 250 ms.
 
-Il riser è sempre: attacco della prima parola al contrario → eco a tempo + riverbero → coda rovesciata, con crescendo di volume e normalizzazione a −1 dBFS.
+Nel riser **non c'è voce dry**: l'attacco viene rovesciato e mandato in eco + riverbero al 100% wet. Si tiene solo la coda, che viene riversata e poi allungata (time-stretch, senza cambiare l'intonazione) fino alla durata scelta, con crescendo di volume e normalizzazione a −1 dBFS.
 
 ## Compilare il plugin
 

@@ -57,18 +57,18 @@ private:
     RiserLookAndFeel lnf;
 
     RiserWaveView wave;
-    juce::TextButton captureBtn { "CATTURA" }, listenBtn { "ASCOLTA" }, loopBtn { "LOOP" },
-                     saveBtn { "SALVA" }, autoBtn { "AUTO" };
+    juce::TextButton captureBtn { "CATTURA" }, loopBtn { "LOOP" }, saveBtn { "SALVA" };
 
     juce::Slider amountKnob;
     std::array<juce::TextButton, 4> lengthBtns;
-    std::array<juce::TextButton, 6> fxBtns;
+    std::array<juce::TextButton, 4> fxBtns;
 
     std::unique_ptr<SliderAtt> amountAtt;
     std::vector<std::unique_ptr<ButtonAtt>> buttonAtts;
 
     juce::Rectangle<int> knobArea;
     int lastToggleMask = -1;
+    bool lastPreviewPlaying = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VocalRiserAudioProcessorEditor)
 };
