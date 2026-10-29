@@ -1,0 +1,39 @@
+name: Build Vocal Riser
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configura
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compila
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Impacchetta (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          cp -R "build/VocalRiser_artefacts/Release/AU/Vocal Riser.component" dist/
+          cp -R "build/VocalRiser_artefacts/Release/VST3/Vocal Riser.vst3" dist/
+          cd dist && zip -r -y ../VocalRiser-mac.zip .
+
+      - name: Impacchetta (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "build/VocalRiser_artefacts/Release/VST3/Vocal Riser.vst3" -DestinationPath VocalRiser-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VocalRiser-${{ runner.os }}
+          path: VocalRiser-*.zip
