@@ -85,6 +85,49 @@ namespace
 }
 
 //==============================================================================
+// Logo chef catta dsp: cappello da chef stilizzato con un'onda sonora sulla fascia
+static void drawChefLogo (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour line, juce::Colour wave)
+{
+    const float w = r.getWidth(), h = r.getHeight();
+    const float x = r.getX(), y = r.getY();
+    const auto P = [&] (float fx, float fy) { return juce::Point<float> (x + fx * w, y + fy * h); };
+
+    // cupola: tre "sbuffi"
+    juce::Path hat;
+    hat.startNewSubPath (P (0.22f, 0.66f));
+    hat.lineTo (P (0.22f, 0.52f));
+    hat.cubicTo (P (0.00f, 0.50f), P (0.02f, 0.18f), P (0.26f, 0.24f));
+    hat.cubicTo (P (0.30f, 0.00f), P (0.70f, 0.00f), P (0.74f, 0.24f));
+    hat.cubicTo (P (0.98f, 0.18f), P (1.00f, 0.50f), P (0.78f, 0.52f));
+    hat.lineTo (P (0.78f, 0.66f));
+
+    // fascia
+    juce::Path band;
+    band.addRoundedRectangle (juce::Rectangle<float> (P (0.20f, 0.66f), P (0.80f, 0.92f)), h * 0.06f);
+
+    const juce::PathStrokeType st (juce::jmax (1.0f, w * 0.075f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.strokePath (hat, st, juce::AffineTransform::translation (0.0f, 1.0f));
+    g.strokePath (band, st, juce::AffineTransform::translation (0.0f, 1.0f));
+    g.setColour (line);
+    g.strokePath (hat, st);
+    g.strokePath (band, st);
+
+    // onda sonora dentro la fascia
+    juce::Path sine;
+    const float bx0 = x + 0.28f * w, bx1 = x + 0.72f * w, by = y + 0.79f * h, amp = 0.07f * h;
+    sine.startNewSubPath (bx0, by);
+    for (int i = 1; i <= 24; ++i)
+    {
+        const float t = (float) i / 24.0f;
+        sine.lineTo (bx0 + t * (bx1 - bx0), by - amp * std::sin (t * juce::MathConstants<float>::twoPi * 1.5f) * (1.0f - std::abs (t - 0.5f)));
+    }
+    juce::DropShadow (wave.withAlpha (0.8f), 4, {}).drawForPath (g, sine);
+    g.setColour (wave);
+    g.strokePath (sine, juce::PathStrokeType (juce::jmax (0.9f, w * 0.06f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
+//==============================================================================
 RiserLookAndFeel::RiserLookAndFeel()
 {
     setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
@@ -371,7 +414,7 @@ void ArrowSelector::paint (juce::Graphics& g)
 VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioProcessor& p)
     : AudioProcessorEditor (&p), proc (p), wave (p),
       lengthSel (*p.apvts.getParameter ("length"), "DURATA", { "1/4 BAR", "1/2 BAR", "1 BAR", "2 BAR" }),
-      reverbSel (*p.apvts.getParameter ("revType"), "RIVERBERO", { "HALL", "PLATE", "SPACE" }),
+      reverbSel (*p.apvts.getParameter ("revType"), "AMBIENTE", { "HALL", "PLATE", "SPACE" }),
       timingSel (*p.apvts.getParameter ("stutRate"), "TIMING STUTTER", { "1/4", "1/8", "1/16" })
 {
     setLookAndFeel (&lnf);
@@ -559,9 +602,18 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillRect (shellR.getX() + 40.0f, sepY + 1.0f, shellR.getWidth() - 80.0f, 1.0f);
 
     // Firma dello sviluppatore
-    g.setFont (labelFont (8.0f, 0.35f));
-    engravedText (g, "CHEF CATTA DSP", { shellR.getX(), shellR.getBottom() - 20.0f, shellR.getWidth(), 12.0f },
-                  juce::Justification::centred, Colours::faint.brighter (0.35f));
+    {
+        const auto sigFont = labelFont (8.0f, 0.35f);
+        const juce::String sig ("CHEF CATTA DSP");
+        const float tw = juce::GlyphArrangement::getStringWidth (sigFont, sig);
+        const float logo = 16.0f, gap = 7.0f;
+        const float x0 = shellR.getCentreX() - (logo + gap + tw) * 0.5f;
+        const float cy = shellR.getBottom() - 15.0f;
+        drawChefLogo (g, { x0, cy - logo * 0.5f - 1.0f, logo, logo }, Colours::dim, Colours::accent2);
+        g.setFont (sigFont);
+        engravedText (g, sig, { x0 + logo + gap, cy - 6.0f, tw + 4.0f, 12.0f },
+                      juce::Justification::centredLeft, Colours::dim);
+    }
 }
 
 void VocalRiserAudioProcessorEditor::resized()

@@ -136,7 +136,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout VocalRiserAudioProcessor::cr
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stutOn", 1 },   "Stutter", true));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "phoneOn", 1 },  "Phone",   false));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "chorusOn", 1 }, "Chorus",  false));
-    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "revType", 1 }, "Riverbero",
+    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "revType", 1 }, "Ambiente",
                                                          StringArray { "Hall", "Plate", "Space" }, 0));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stereoOn", 1 }, "Mono -> Stereo", false));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "stutRate", 1 }, "Timing Stutter",

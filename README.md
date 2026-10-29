@@ -23,7 +23,7 @@ Il plugin **non modifica la traccia**: ascolta la voce, genera il riser e te lo 
 | STUTTER | Ripetizioni costanti su tutto il riser, allineate all'attacco della voce. Il **TIMING** si sceglie tra 1/4, 1/8 e 1/16 |
 | PHONE | Suono "telefono" (banda stretta + saturazione) |
 | CHORUS | Allarga e rende più morbida la coda |
-| RIVERBERO | **HALL** (sala ampia, il suono originale), **PLATE** (denso e brillante), **SPACE** (coda enorme, scura e morbida) |
+| AMBIENTE | **HALL** (sala ampia, il suono originale), **PLATE** (denso e brillante), **SPACE** (coda enorme, scura e morbida) |
 | IMMAGINE | Voce mono: scegli **MONO** o **STEREO** (allarga il riser). Voce stereo: il riser resta stereo e l'immagine della sorgente viene mantenuta |
 
 Il plugin ascolta tutta la frase ma usa **solo la prima parte della prima parola** (l'attacco): trova da solo dove finisce la prima parola e ne prende il primo 40%, tra 80 e 250 ms.
