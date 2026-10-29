@@ -82,7 +82,7 @@ private:
     std::unique_ptr<SliderAtt> amountAtt;
     std::vector<std::unique_ptr<ButtonAtt>> buttonAtts;
 
-    juce::Rectangle<int> displayArea, knobArea;
+    juce::Rectangle<int> displayArea, knobArea, intensityArea;
     juce::Path displayShape;                 // display con l'incavo per la manopola
     juce::Point<float> knobCentre;
     float notchRadius = 0.0f;

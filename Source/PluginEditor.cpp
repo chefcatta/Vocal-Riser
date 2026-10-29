@@ -417,7 +417,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     amountKnob.setDoubleClickReturnValue (true, 0.6);
     addAndMakeVisible (amountKnob);
     amountAtt = std::make_unique<SliderAtt> (apvts, "amount", amountKnob);
-    amountKnob.onValueChange = [this] { repaint (knobArea.getX() - 40, knobArea.getBottom(), knobArea.getWidth() + 80, 30); };
+    amountKnob.onValueChange = [this] { repaint (intensityArea); };
 
     // Selettori
     addAndMakeVisible (lengthSel);
@@ -443,7 +443,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
         buttonAtts.push_back (std::make_unique<ButtonAtt> (apvts, fxIds[i], b));
     }
 
-    setSize (460, 546);
+    setSize (460, 586);
     timerCallback();
     startTimerHz (60);
 }
@@ -533,11 +533,16 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     }
 
     // Valore intensita
-    const auto lab = juce::Rectangle<float> ((float) knobArea.getX() - 40.0f, (float) knobArea.getBottom() + 4.0f,
-                                             (float) knobArea.getWidth() + 80.0f, 16.0f);
-    g.setFont (labelFont (10.0f, 0.2f));
-    engravedText (g, juce::String (juce::CharPointer_UTF8 ("INTENSIT\xc3\x80  ")) + juce::String (juce::roundToInt (amountKnob.getValue() * 100.0)) + "%",
-                  lab, juce::Justification::centred, Colours::text.withAlpha (0.8f));
+    // sotto l'alloggiamento della manopola, impaginato come gli altri selettori
+    {
+        auto lab = intensityArea.toFloat();
+        g.setFont (labelFont (8.5f, 0.2f));
+        engravedText (g, juce::CharPointer_UTF8 ("INTENSIT\xc3\x80"), lab.removeFromTop (12.0f),
+                      juce::Justification::centred, Colours::dim);
+        g.setFont (labelFont (12.5f, 0.12f));
+        engravedText (g, juce::String (juce::roundToInt (amountKnob.getValue() * 100.0)) + " %", lab,
+                      juce::Justification::centred, Colours::text);
+    }
 
     // Etichetta sopra STEREO, come gli altri selettori
     const auto sb = stereoBtn.getBounds().toFloat();
@@ -555,7 +560,7 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Firma dello sviluppatore
     g.setFont (labelFont (8.0f, 0.35f));
-    engravedText (g, "FRA CATTA DSP", { shellR.getX(), shellR.getBottom() - 20.0f, shellR.getWidth(), 12.0f },
+    engravedText (g, "CHEF CATTA DSP", { shellR.getX(), shellR.getBottom() - 20.0f, shellR.getWidth(), 12.0f },
                   juce::Justification::centred, Colours::faint.brighter (0.35f));
 }
 
@@ -614,7 +619,11 @@ void VocalRiserAudioProcessorEditor::resized()
     loopBtn.setBounds (displayArea.getRight() - 100, ctrlY, 88, 28);
 
     // Sotto la manopola: selettori, effetti, firma
-    int y = knobArea.getBottom() + 30;
+    // Intensita: sotto l'alloggiamento della manopola, con un po' di respiro
+    const int recessBottom = juce::roundToInt (knobCentre.y + (float) ks * 0.5f + 12.0f);
+    intensityArea = juce::Rectangle<int> (juce::roundToInt (knobCentre.x) - 70, recessBottom + 10, 140, 30);
+
+    int y = intensityArea.getBottom() + 18;
     auto sel = juce::Rectangle<int> (shell.getX() + 18, y, shell.getWidth() - 36, 40);
     const int sw = sel.getWidth() / 4;
     lengthSel.setBounds (sel.removeFromLeft (sw).reduced (2, 0));
