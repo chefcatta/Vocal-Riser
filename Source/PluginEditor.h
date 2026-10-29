@@ -64,6 +64,9 @@ public:
 private:
     void timerCallback() override;
     juce::String statusText() const;
+    void drawRackEars (juce::Graphics&);
+
+    static constexpr int rackEar = 30;   // larghezza delle "orecchie" da rack ai lati
 
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
