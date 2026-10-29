@@ -1,4 +1,4 @@
-# Vocal Riser — chef catta dsp
+# Vocal Riser — Chef Catta
 
 Plugin (AU / VST3) per creare riser sulle voci in pochi secondi, direttamente in sessione.
 Il plugin **non modifica la traccia**: ascolta la voce, genera il riser e te lo fa trascinare nella timeline.

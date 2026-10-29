@@ -25,8 +25,8 @@ else()
 endif()
 
 juce_add_plugin(VocalRiser
-    COMPANY_NAME "chef catta dsp"
-    BUNDLE_ID "com.chefcattadsp.vocalriser"
+    COMPANY_NAME "Chef Catta"
+    BUNDLE_ID "com.chefcatta.vocalriser"
     PLUGIN_MANUFACTURER_CODE Vrsr
     PLUGIN_CODE Vrs1
     FORMATS AU VST3 Standalone

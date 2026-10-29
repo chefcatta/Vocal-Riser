@@ -85,7 +85,7 @@ namespace
 }
 
 //==============================================================================
-// Logo chef catta dsp: cappello da chef stilizzato con un'onda sonora sulla fascia
+// Logo Chef Catta: cappello da chef stilizzato con un'onda sonora sulla fascia
 static void drawChefLogo (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour line, juce::Colour wave)
 {
     const float w = r.getWidth(), h = r.getHeight();
@@ -574,7 +574,7 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     engravedText (g, "VOCAL RISER", titleR, juce::Justification::centredLeft, Colours::text);
 
     g.setFont (labelFont (8.5f, 0.16f));
-    engravedText (g, statusText(), { d.getCentreX() - 60.0f, d.getY() + 36.0f, 120.0f, 12.0f },
+    engravedText (g, statusText(), { d.getCentreX() - 140.0f, d.getY() + 36.0f, 280.0f, 12.0f },
                   juce::Justification::centred, proc.previewPlaying.load() ? Colours::accent2 : Colours::dim);
 
     // Alloggiamento morbido della manopola, dentro l'incavo
@@ -624,8 +624,8 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Firma dello sviluppatore
     {
-        const auto sigFont = labelFont (8.0f, 0.35f);
-        const juce::String sig ("CHEF CATTA DSP");
+        const auto sigFont = labelFont (10.5f, 0.08f);
+        const juce::String sig ("Chef Catta");
         const float tw = juce::GlyphArrangement::getStringWidth (sigFont, sig);
         const float logo = 16.0f, gap = 7.0f;
         const float x0 = shellR.getCentreX() - (logo + gap + tw) * 0.5f;
