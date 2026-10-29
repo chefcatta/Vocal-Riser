@@ -624,16 +624,23 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Firma dello sviluppatore
     {
-        const auto sigFont = labelFont (10.5f, 0.08f);
-        const juce::String sig ("Chef Catta");
-        const float tw = juce::GlyphArrangement::getStringWidth (sigFont, sig);
-        const float logo = 16.0f, gap = 7.0f;
-        const float x0 = shellR.getCentreX() - (logo + gap + tw) * 0.5f;
+        // marchio: "CHEF CATTA" maiuscolo spaziato + "dsp" minuscolo
+        const auto nameFont = labelFont (9.0f, 0.3f);
+        const auto dspFont  = juce::Font (juce::FontOptions (10.5f)).withExtraKerningFactor (0.06f);
+        const juce::String name ("CHEF CATTA"), dsp ("dsp");
+        const float nw = juce::GlyphArrangement::getStringWidth (nameFont, name) - 9.0f * 0.3f;
+        const float dw = juce::GlyphArrangement::getStringWidth (dspFont, dsp);
+        const float logo = 16.0f, gap = 7.0f, gap2 = 5.0f;
+        const float total = logo + gap + nw + gap2 + dw;
+        const float x0 = shellR.getCentreX() - total * 0.5f;
         const float cy = shellR.getBottom() - 15.0f;
+
         drawChefLogo (g, { x0, cy - logo * 0.5f - 1.0f, logo, logo }, Colours::dim, Colours::dim);
-        g.setFont (sigFont);
-        engravedText (g, sig, { x0 + logo + gap, cy - 6.0f, tw + 4.0f, 12.0f },
-                      juce::Justification::centredLeft, Colours::dim);
+        g.setFont (nameFont);
+        engravedText (g, name, { x0 + logo + gap, cy - 6.0f, nw + 6.0f, 12.0f }, juce::Justification::centredLeft, Colours::dim);
+        g.setFont (dspFont);
+        engravedText (g, dsp, { x0 + logo + gap + nw + gap2, cy - 7.0f, dw + 4.0f, 13.0f }, juce::Justification::centredLeft,
+                      Colours::dim.brighter (0.25f));
     }
 }
 
