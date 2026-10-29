@@ -115,16 +115,15 @@ static void drawChefLogo (juce::Graphics& g, juce::Rectangle<float> r, juce::Col
 
     // onda sonora dentro la fascia
     juce::Path sine;
-    const float bx0 = x + 0.28f * w, bx1 = x + 0.72f * w, by = y + 0.79f * h, amp = 0.07f * h;
+    const float bx0 = x + 0.36f * w, bx1 = x + 0.64f * w, by = y + 0.79f * h, amp = 0.045f * h;
     sine.startNewSubPath (bx0, by);
     for (int i = 1; i <= 24; ++i)
     {
         const float t = (float) i / 24.0f;
         sine.lineTo (bx0 + t * (bx1 - bx0), by - amp * std::sin (t * juce::MathConstants<float>::twoPi * 1.5f) * (1.0f - std::abs (t - 0.5f)));
     }
-    juce::DropShadow (wave.withAlpha (0.8f), 4, {}).drawForPath (g, sine);
     g.setColour (wave);
-    g.strokePath (sine, juce::PathStrokeType (juce::jmax (0.9f, w * 0.06f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.strokePath (sine, juce::PathStrokeType (juce::jmax (0.8f, w * 0.05f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 //==============================================================================
@@ -486,7 +485,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
         buttonAtts.push_back (std::make_unique<ButtonAtt> (apvts, fxIds[i], b));
     }
 
-    setSize (460, 600);
+    setSize (460, 586);
     timerCallback();
     startTimerHz (60);
 }
@@ -605,17 +604,14 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     {
         const auto sigFont = labelFont (8.0f, 0.35f);
         const juce::String sig ("CHEF CATTA DSP");
-        const float tw    = juce::GlyphArrangement::getStringWidth (sigFont, sig);
-        const float chefW = juce::GlyphArrangement::getStringWidth (sigFont, "CHEF") - 8.0f * 0.35f; // senza la spaziatura finale
-        const float x0    = shellR.getCentreX() - tw * 0.5f;
-        const float textY = shellR.getBottom() - 20.0f;
-
-        // il cappello "indossato" dalla parola CHEF
-        const float logo = 15.0f;
-        drawChefLogo (g, { x0 + chefW * 0.5f - logo * 0.5f, textY - logo + 1.0f, logo, logo }, Colours::dim, Colours::accent2);
-
+        const float tw = juce::GlyphArrangement::getStringWidth (sigFont, sig);
+        const float logo = 16.0f, gap = 7.0f;
+        const float x0 = shellR.getCentreX() - (logo + gap + tw) * 0.5f;
+        const float cy = shellR.getBottom() - 15.0f;
+        drawChefLogo (g, { x0, cy - logo * 0.5f - 1.0f, logo, logo }, Colours::dim, Colours::dim);
         g.setFont (sigFont);
-        engravedText (g, sig, { x0, textY, tw + 4.0f, 12.0f }, juce::Justification::centredLeft, Colours::dim);
+        engravedText (g, sig, { x0 + logo + gap, cy - 6.0f, tw + 4.0f, 12.0f },
+                      juce::Justification::centredLeft, Colours::dim);
     }
 }
 
