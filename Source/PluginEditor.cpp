@@ -410,77 +410,20 @@ void ArrowSelector::paint (juce::Graphics& g)
 }
 
 //==============================================================================
-// Vite a croce in metallo, vista dall'alto con luce da in alto a sinistra
-static void drawScrew (juce::Graphics& g, juce::Point<float> c, float r, float angle)
+// Griglia di forellini incisi nel pannello (decorazione)
+static void drawDotGrid (juce::Graphics& g, juce::Point<float> origin, int cols, int rows, float spacing, float dir = 1.0f)
 {
-    // svasatura: incavo circolare nel pannello in cui siede la vite
-    {
-        const float sr = r * 1.45f;
-        juce::Path s;
-        s.addEllipse (c.x - sr, c.y - sr, sr * 2.0f, sr * 2.0f);
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff050607), c.x, c.y - sr,
-                                                 juce::Colour (0xff2a2c31), c.x, c.y + sr, false));
-        g.fillPath (s);
-        g.setColour (juce::Colours::white.withAlpha (0.08f));
-        g.drawEllipse (c.x - sr, c.y - sr + 0.6f, sr * 2.0f, sr * 2.0f, 0.8f);
-    }
-
-    juce::Path head;
-    head.addEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
-
-    // ombra proiettata sul metallo
-    juce::DropShadow (juce::Colours::black.withAlpha (0.9f), juce::roundToInt (r * 0.9f), { 1, juce::roundToInt (r * 0.35f) }).drawForPath (g, head);
-
-    // rondella
-    const float wr = r * 1.12f;
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff9aa0a8), c.x - wr, c.y - wr, juce::Colour (0xff2b2e33), c.x + wr, c.y + wr, false));
-    g.fillEllipse (c.x - wr, c.y - wr, wr * 2.0f, wr * 2.0f);
-
-    // testa bombata: gradiente radiale decentrato verso la luce
-    juce::ColourGradient dome (juce::Colour (0xffe9ecf0), c.x - r * 0.35f, c.y - r * 0.45f,
-                               juce::Colour (0xff3b3f46), c.x + r * 0.9f, c.y + r * 0.9f, true);
-    dome.addColour (0.45, juce::Colour (0xffa3a9b2));
-    dome.addColour (0.8, juce::Colour (0xff5a5f68));
-    g.setGradientFill (dome);
-    g.fillPath (head);
-
-    // finitura spazzolata concentrica, molto leggera
-    for (int i = 1; i < 6; ++i)
-    {
-        const float rr = r * (float) i / 6.0f;
-        g.setColour (juce::Colours::white.withAlpha (i % 2 ? 0.035f : 0.0f));
-        g.drawEllipse (c.x - rr, c.y - rr, rr * 2.0f, rr * 2.0f, 0.6f);
-    }
-
-    // croce Phillips incisa (ombra interna + bordo illuminato)
-    {
-        const float L = r * 0.62f, wdt = r * 0.24f;
-        juce::Path cross;
-        cross.addRoundedRectangle (-L, -wdt * 0.5f, L * 2.0f, wdt, wdt * 0.3f);
-        cross.addRoundedRectangle (-wdt * 0.5f, -L, wdt, L * 2.0f, wdt * 0.3f);
-        cross.setUsingNonZeroWinding (true);
-        const auto tf = juce::AffineTransform::rotation (angle).translated (c);
-
-        g.setColour (juce::Colours::white.withAlpha (0.35f));
-        g.fillPath (cross, tf.translated (0.0f, 0.7f));              // bordo inferiore illuminato
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff0d0e10), c.x, c.y - L,
-                                                 juce::Colour (0xff2a2d32), c.x, c.y + L, false));
-        g.fillPath (cross, tf);
-        juce::Path centre;
-        centre.addEllipse (-wdt * 0.7f, -wdt * 0.7f, wdt * 1.4f, wdt * 1.4f);
-        g.setColour (juce::Colour (0xff08090a));
-        g.fillPath (centre, tf);
-    }
-
-    // riflesso speculare
-    juce::ColourGradient spec (juce::Colours::white.withAlpha (0.75f), c.x - r * 0.4f, c.y - r * 0.5f,
-                               juce::Colours::white.withAlpha (0.0f), c.x - r * 0.4f + r * 0.55f, c.y - r * 0.5f, true);
-    g.setGradientFill (spec);
-    g.fillEllipse (c.x - r * 0.85f, c.y - r * 0.9f, r * 0.9f, r * 0.7f);
-
-    // bordo della testa
-    g.setColour (juce::Colours::black.withAlpha (0.55f));
-    g.drawEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f, 0.8f);
+    for (int rI = 0; rI < rows; ++rI)
+        for (int cI = 0; cI < cols; ++cI)
+        {
+            const float x = origin.x + dir * (float) cI * spacing;
+            const float y = origin.y + (float) rI * spacing;
+            const float rad = 1.5f;
+            g.setColour (juce::Colours::white.withAlpha (0.07f));               // bordo illuminato in basso
+            g.fillEllipse (x - rad, y - rad + 0.8f, rad * 2.0f, rad * 2.0f);
+            g.setColour (juce::Colour (0xff08090b));                             // foro
+            g.fillEllipse (x - rad, y - rad, rad * 2.0f, rad * 2.0f);
+        }
 }
 
 //==============================================================================
@@ -599,15 +542,6 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
                                              juce::Colours::black.withAlpha (0.6f), 0.0f, shellR.getBottom(), false));
     g.strokePath (shell, juce::PathStrokeType (1.0f));
 
-    // Viti di fissaggio agli angoli del pannello
-    {
-        const float m = 16.0f;
-        const float angles[] = { 0.35f, 1.1f, 0.8f, 0.15f };
-        int k = 0;
-        for (auto c : { shellR.getTopLeft().translated (m, m),    shellR.getTopRight().translated (-m, m),
-                        shellR.getBottomLeft().translated (m, -m), shellR.getBottomRight().translated (-m, -m) })
-            drawScrew (g, c, 5.5f, angles[k++]);
-    }
 
     // Display scuro in alto con l'incavo che abbraccia la manopola
     const auto d = displayArea.toFloat();
@@ -684,6 +618,21 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white.withAlpha (0.04f));
     g.fillRect (shellR.getX() + 40.0f, sepY + 1.0f, shellR.getWidth() - 80.0f, 1.0f);
 
+    // Forellini decorativi negli spazi vuoti ai lati della manopola e in fondo
+    {
+        const float sp = 8.0f;
+        const float lx = shellR.getX() + 22.0f, rx = shellR.getRight() - 22.0f;
+        const float topY = (float) displayArea.getBottom() + 22.0f;
+        const float lowY = (float) intensityArea.getBottom() - 14.0f;
+        drawDotGrid (g, { lx, topY }, 3, 2, sp,  1.0f);
+        drawDotGrid (g, { rx, topY }, 3, 2, sp, -1.0f);
+        drawDotGrid (g, { lx, lowY }, 3, 2, sp,  1.0f);
+        drawDotGrid (g, { rx, lowY }, 3, 2, sp, -1.0f);
+        const float footY = shellR.getBottom() - 24.0f;
+        drawDotGrid (g, { lx, footY }, 3, 2, sp,  1.0f);
+        drawDotGrid (g, { rx, footY }, 3, 2, sp, -1.0f);
+    }
+
     // Firma dello sviluppatore
     {
         const auto sigFont = labelFont (8.0f, 0.35f);
@@ -704,7 +653,7 @@ void VocalRiserAudioProcessorEditor::resized()
     auto shell = getLocalBounds().reduced (8);
 
     // Display in alto
-    displayArea = shell.withHeight (226).reduced (30, 8);   // spazio ai lati per le viti
+    displayArea = shell.withHeight (226).reduced (8, 8);
     const auto d = displayArea.toFloat();
 
     // Manopola: il suo centro sta sotto al display, l'incavo "morde" il bordo inferiore
