@@ -88,6 +88,11 @@ jobs:
             out/ChefRiser-windows.zip
             out/README.txt
 
+      - name: Togli dalla release i file non piu usati
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete-asset "v${{ steps.ver.outputs.version }}" INSTALLAZIONE.md -y -R "${{ github.repository }}" || true
+
       - name: Pubblica nel branch "plugin"
         run: |
           cd out
