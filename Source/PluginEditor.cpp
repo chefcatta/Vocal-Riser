@@ -658,7 +658,7 @@ void VocalRiserAudioProcessorEditor::paintStatic (juce::Graphics& g)
     g.setColour (Colours::accent2);
     g.fillEllipse (d.getX() + 18.0f, titleR.getCentreY() - 2.0f, 4.0f, 4.0f);
     g.setFont (labelFont (11.0f, 0.3f));
-    engravedText (g, "VOCAL RISER", titleR, juce::Justification::centredLeft, Colours::text);
+    engravedText (g, "CHEF RISER", titleR, juce::Justification::centredLeft, Colours::text);
 
 
     // Alloggiamento morbido della manopola, dentro l'incavo

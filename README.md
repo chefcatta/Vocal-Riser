@@ -1,17 +1,17 @@
-# Vocal Riser
+# Chef Riser
 
 **CHEF CATTA dsp**
 
 Plugin per creare **riser vocali** in pochi secondi, direttamente in sessione. Ascolta la frase, prende l'attacco della prima parola e lo trasforma in una coda riversata e allungata, a tempo col progetto, da trascinare nella timeline.
 
-![Vocal Riser](screenshot.png)
+![Chef Riser](screenshot.png)
 
 ## ⬇️ Download
 
 **[Scarica l'ultima versione](https://github.com/chefcatta/Vocal-Riser/releases/latest)**: nella pagina che si apre, sotto *Assets*:
 
-- **VocalRiser-mac.zip**: Mac (Apple Silicon e Intel), Audio Unit + VST3
-- **VocalRiser-windows.zip**: Windows 64 bit, VST3
+- **ChefRiser-mac.zip**: Mac (Apple Silicon e Intel), Audio Unit + VST3
+- **ChefRiser-windows.zip**: Windows 64 bit, VST3
 
 Funziona con Logic Pro, GarageBand, Ableton Live, FL Studio, Cubase, Studio One, Reaper, Bitwig e tutte le DAW che leggono Audio Unit o VST3. Pro Tools (AAX) non è ancora supportato.
 
@@ -19,13 +19,13 @@ Funziona con Logic Pro, GarageBand, Ableton Live, FL Studio, Cubase, Studio One,
 
 ## Come si usa
 
-1. Metti **Vocal Riser** come insert sulla traccia della voce.
+1. Metti **Chef Riser** come insert sulla traccia della voce.
 2. Premi **CATTURA**, porta il playhead poco prima della frase e premi **play**: il plugin ascolta la frase.
 3. Gira la manopola **INTENSITÀ** e scegli la **DURATA** (1/4, 1/2, 1 o 2 battute, a tempo col progetto).
 4. Accendi **LOOP**: con la DAW ferma il plugin suona il riser in loop, così lo regoli a orecchio. In Logic tieni selezionata la traccia.
 5. **Trascina la forma d'onda** su una traccia audio: il riser finisce esattamente dove attacca la voce, quindi allinea la **fine** della clip all'inizio della frase.
 
-**SALVA** scrive il WAV (24 bit) in `Documenti/Vocal Riser`. **RESET** riporta i controlli ai valori iniziali.
+**SALVA** scrive il WAV (24 bit) in `Documenti/Chef Riser`. **RESET** riporta i controlli ai valori iniziali.
 
 | Controllo | Cosa fa |
 |---|---|

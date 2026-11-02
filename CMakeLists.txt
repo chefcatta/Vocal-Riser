@@ -8,7 +8,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 # installare nient'altro (Visual C++ Redistributable)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(VocalRiser VERSION 1.0.1)
+project(VocalRiser VERSION 1.1.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,12 +39,12 @@ endif()
 
 juce_add_plugin(VocalRiser
     COMPANY_NAME "Chef Catta"
-    BUNDLE_ID "com.chefcatta.vocalriser"
+    BUNDLE_ID "com.chefcatta.chefriser"
     PLUGIN_MANUFACTURER_CODE Vrsr
     PLUGIN_CODE Vrs1
     FORMATS ${VR_FORMATS}
     AAX_CATEGORY AAX_ePlugInCategory_Effect
-    PRODUCT_NAME "Vocal Riser"
+    PRODUCT_NAME "Chef Riser"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE

@@ -99,7 +99,7 @@ namespace
 class RiserRenderThread : public juce::Thread
 {
 public:
-    explicit RiserRenderThread (VocalRiserAudioProcessor& p) : juce::Thread ("VocalRiser render"), owner (p) {}
+    explicit RiserRenderThread (VocalRiserAudioProcessor& p) : juce::Thread ("ChefRiser render"), owner (p) {}
 
     void request() { pending.store (true); notify(); }
 
@@ -644,11 +644,11 @@ juce::File VocalRiserAudioProcessor::writeRiserFile()
         buf = rendered; rate = renderedSr; name = renderedName;
     }
 
-    auto folder = File::getSpecialLocation (File::userDocumentsDirectory).getChildFile ("Vocal Riser");
+    auto folder = File::getSpecialLocation (File::userDocumentsDirectory).getChildFile ("Chef Riser");
     if (! folder.createDirectory())
         folder = File::getSpecialLocation (File::tempDirectory);
 
-    auto file = folder.getNonexistentChildFile ("VocalRiser_" + name + "_" + Time::getCurrentTime().formatted ("%H%M%S"),
+    auto file = folder.getNonexistentChildFile ("ChefRiser_" + name + "_" + Time::getCurrentTime().formatted ("%H%M%S"),
                                                 ".wav", false);
 
     WavAudioFormat wav;

@@ -1,4 +1,4 @@
-name: Build Vocal Riser
+name: Build Chef Riser
 
 on:
   push:
@@ -25,21 +25,21 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
-          cp -R "build/VocalRiser_artefacts/Release/AU/Vocal Riser.component" dist/
-          cp -R "build/VocalRiser_artefacts/Release/VST3/Vocal Riser.vst3" dist/
-          codesign --force --deep --sign - "dist/Vocal Riser.component"
-          codesign --force --deep --sign - "dist/Vocal Riser.vst3"
-          cd dist && zip -r -y ../VocalRiser-mac.zip .
+          cp -R "build/VocalRiser_artefacts/Release/AU/Chef Riser.component" dist/
+          cp -R "build/VocalRiser_artefacts/Release/VST3/Chef Riser.vst3" dist/
+          codesign --force --deep --sign - "dist/Chef Riser.component"
+          codesign --force --deep --sign - "dist/Chef Riser.vst3"
+          cd dist && zip -r -y ../ChefRiser-mac.zip .
 
       - name: Impacchetta (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "build/VocalRiser_artefacts/Release/VST3/Vocal Riser.vst3" -DestinationPath VocalRiser-windows.zip
+        run: Compress-Archive -Path "build/VocalRiser_artefacts/Release/VST3/Chef Riser.vst3" -DestinationPath ChefRiser-windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VocalRiser-${{ runner.os }}
-          path: VocalRiser-*.zip
+          name: ChefRiser-${{ runner.os }}
+          path: ChefRiser-*.zip
 
   # Copia i plugin compilati nel branch "plugin" del repository,
   # così si scaricano direttamente da GitHub
@@ -69,19 +69,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
-          name: Vocal Riser ${{ steps.ver.outputs.version }}
+          name: Chef Riser ${{ steps.ver.outputs.version }}
           make_latest: true
           body: |
-            **Vocal Riser — CHEF CATTA dsp**
+            **Chef Riser — CHEF CATTA dsp**
 
             Scarica il file per il tuo computer qui sotto (sezione *Assets*):
-            - **VocalRiser-mac.zip** — Mac (Apple Silicon e Intel): Audio Unit per Logic/GarageBand + VST3 per le altre DAW
-            - **VocalRiser-windows.zip** — Windows 64 bit: VST3
+            - **ChefRiser-mac.zip** — Mac (Apple Silicon e Intel): Audio Unit per Logic/GarageBand + VST3 per le altre DAW
+            - **ChefRiser-windows.zip** — Windows 64 bit: VST3
 
             Le istruzioni di installazione per ogni DAW sono nel file **INSTALLAZIONE.md** qui sotto e nella pagina principale del progetto.
           files: |
-            out/VocalRiser-mac.zip
-            out/VocalRiser-windows.zip
+            out/ChefRiser-mac.zip
+            out/ChefRiser-windows.zip
             out/INSTALLAZIONE.md
 
       - name: Pubblica nel branch "plugin"
