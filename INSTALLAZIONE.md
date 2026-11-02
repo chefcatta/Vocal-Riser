@@ -74,7 +74,7 @@ Dopo aver copiato il plugin, apri (o riavvia) la DAW e fai una nuova scansione d
 
 ### Logic Pro (Mac)
 1. Apri Logic. Al primo avvio scansiona da solo i nuovi plugin.
-2. Se non compare, vai su **Logic Pro → Impostazioni → Plug-in Manager**. Cerca «Vocal», seleziona la riga e premi **Reset & Rescan Selection** (in basso a sinistra). Controlla che la casella **Usa** sia spuntata.
+2. Se non compare, vai su **Logic Pro → Impostazioni → Plug-in Manager**. Cerca «Chef», seleziona la riga e premi **Reset & Rescan Selection** (in basso a sinistra). Controlla che la casella **Usa** sia spuntata.
 3. Su una traccia audio: slot **Audio FX → Audio Units → Chef Catta → Chef Riser**.
 
 ### GarageBand (Mac)
