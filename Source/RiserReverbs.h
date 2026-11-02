@@ -4,6 +4,7 @@
 #include <array>
 #include <vector>
 #include <cmath>
+#include <algorithm>
 
 // Riverberi del riser. Tutti lavorano al 100% wet (nessun segnale dry in uscita).
 // Obiettivo: suono naturale. Per questo ogni algoritmo ha
@@ -267,7 +268,10 @@ namespace RiserReverbs
 
     //==========================================================================
     // Applica il riverbero scelto in place (risultato 100% wet) su un buffer stereo.
-    inline void apply (juce::AudioBuffer<float>& buf, int numSamples, Type type, Image image, float amount, double sr)
+    // tailSeconds: quanto deve durare la coda. Per i riser lunghi la sala decade piu lentamente,
+    // cosi la coda copre il riser senza doverla allungare artificialmente.
+    inline void apply (juce::AudioBuffer<float>& buf, int numSamples, Type type, Image image, float amount, double sr,
+                       double tailSeconds = 0.0)
     {
         float* L = buf.getWritePointer (0);
         float* R = buf.getWritePointer (1);
@@ -310,7 +314,8 @@ namespace RiserReverbs
         }
         else
         {
-            const auto s = type == hall ? hallSettings (amount) : spaceSettings (amount);
+            auto s = type == hall ? hallSettings (amount) : spaceSettings (amount);
+            s.t60 = std::max (s.t60, std::min (6.0, 0.6 * tailSeconds));
             FDN a, b; a.prepare (sr, s);
             auto s2 = s;                                        // il canale destro e leggermente diverso
             for (auto& ms : s2.sizeMs) ms *= 1.023;

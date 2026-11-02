@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "RiserReverbs.h"
+#include "RiserDsp.h"
 
 namespace
 {
@@ -9,152 +10,6 @@ namespace
     const char* const renderParams[] = { "amount", "length", "filterOn", "stutOn", "phoneOn", "chorusOn",
                                          "revType", "stereoOn", "stutRate", "stutDepth", "pingPong" };
     constexpr float thresholdGain = 0.0056f; // ~ -45 dBFS
-
-    // Trova dove finisce la prima parola: l'inviluppo scende sotto -12 dB
-    // rispetto al picco della parola (o sotto la soglia) per almeno 40 ms.
-    int findFirstWordLength (const juce::AudioBuffer<float>& cap, int capLen, int capCh, double sr)
-    {
-        const int hop      = juce::jmax (1, (int) (0.005 * sr));
-        const int win      = hop * 2;
-        const int minWord  = (int) (0.08 * sr);
-        const int maxWord  = juce::jmin (capLen, (int) (1.2 * sr));
-        const int dipHold  = (int) (0.04 * sr);
-        const int release  = (int) (0.02 * sr);
-
-        float peak = 0.0f;
-        int dipStart = -1;
-
-        for (int pos = 0; pos + win <= capLen; pos += hop)
-        {
-            double sum = 0.0;
-            for (int ch = 0; ch < capCh; ++ch)
-            {
-                const float* d = cap.getReadPointer (ch, pos);
-                for (int i = 0; i < win; ++i) sum += (double) d[i] * d[i];
-            }
-            const float env = (float) std::sqrt (sum / (double) (win * capCh));
-            peak = juce::jmax (peak, env);
-
-            const bool dip = pos > minWord && (env < peak * 0.25f || env < thresholdGain * 0.5f);
-            if (dip)
-            {
-                if (dipStart < 0) dipStart = pos;
-                if (pos - dipStart >= dipHold)
-                    return juce::jmin (capLen, dipStart + release);
-            }
-            else
-            {
-                dipStart = -1;
-            }
-
-            if (pos >= maxWord) break;
-        }
-        return juce::jmax (1, maxWord); // nota lunga senza pause: tieni al massimo 1,2 s
-    }
-
-    // Trova la PRIMA SILLABA della prima parola: dall'attacco fino alla prima "valle"
-    // dell'inviluppo (il volume scende tra una sillaba e l'altra) o alla fine della parola.
-    struct Span { int start = 0, end = 0; };
-    Span findFirstSyllable (const juce::AudioBuffer<float>& cap, int capLen, int capCh, int wordLen, double sr)
-    {
-        const int hop = juce::jmax (1, (int) (0.0025 * sr));
-        const int win = juce::jmax (hop, (int) (0.012 * sr));
-        const int last = juce::jmin (capLen, wordLen + win);
-
-        std::vector<float> env;
-        for (int pos = 0; pos + win <= last; pos += hop)
-        {
-            double sum = 0.0;
-            for (int ch = 0; ch < capCh; ++ch)
-            {
-                const float* d = cap.getReadPointer (ch, pos);
-                for (int i = 0; i < win; ++i) sum += (double) d[i] * d[i];
-            }
-            env.push_back ((float) std::sqrt (sum / (double) (win * capCh)));
-        }
-        Span sp { 0, juce::jmin (capLen, wordLen) };
-        if (env.size() < 4) return sp;
-
-        // leggero smussamento (3 frame)
-        std::vector<float> e (env.size());
-        for (size_t i = 0; i < env.size(); ++i)
-            e[i] = (env[i > 0 ? i - 1 : i] + env[i] + env[i + 1 < env.size() ? i + 1 : i]) / 3.0f;
-
-        const float peak = *std::max_element (e.begin(), e.end());
-        if (peak <= 0.0f) return sp;
-
-        size_t on = 0;
-        while (on < e.size() && e[on] < peak * 0.12f) ++on;
-
-        // primo massimo locale importante, poi la prima valle profonda dopo di esso
-        size_t i = on;
-        float localMax = 0.0f;
-        size_t endFrame = e.size() - 1;
-        const size_t minGap = (size_t) (0.05 * sr / hop);           // una sillaba dura almeno ~50 ms
-        for (; i < e.size(); ++i)
-        {
-            localMax = juce::jmax (localMax, e[i]);
-            if (localMax < peak * 0.35f || i < on + minGap) continue;
-            // valle: abbastanza piu bassa del massimo e poi il volume risale (nuova sillaba)
-            if (e[i] < localMax * 0.55f)
-            {
-                size_t j = i;
-                while (j + 1 < e.size() && e[j + 1] <= e[j]) ++j;            // scendi fino al minimo
-                size_t k = j;
-                while (k + 1 < e.size() && k < j + (size_t) (0.06 * sr / hop)) ++k;
-                const float rise = *std::max_element (e.begin() + (long) j, e.begin() + (long) k + 1);
-                if (rise > e[j] * 1.3f || e[j] < peak * 0.1f) { endFrame = j; break; }
-            }
-        }
-
-        sp.start = juce::jmax (0, (int) on * hop - (int) (0.004 * sr));
-        sp.end   = juce::jmin (capLen, (int) endFrame * hop + win / 2);
-        const int minLen = (int) (0.07 * sr), maxLen = (int) (0.45 * sr);
-        if (sp.end - sp.start < minLen) sp.end = juce::jmin (capLen, sp.start + minLen);
-        if (sp.end - sp.start > maxLen) sp.end = sp.start + maxLen;
-        return sp;
-    }
-
-    // Time-stretch granulare (senza cambiare intonazione): allunga src fino a outLen campioni.
-    // Le posizioni dei grani sono le stesse per tutti i canali, cosi l'immagine stereo resta stabile.
-    void stretchGranular (const juce::AudioBuffer<float>& src, int srcLen, juce::AudioBuffer<float>& dst, int outLen, double sr)
-    {
-        dst.setSize (src.getNumChannels(), outLen, false, false, true);
-        dst.clear();
-        if (srcLen < 8 || outLen < 8) return;
-
-        const int grain = juce::jlimit (64, juce::jmax (64, srcLen), (int) (0.07 * sr));
-        const int hop   = juce::jmax (1, grain / 4);
-        std::vector<float> win ((size_t) grain), norm ((size_t) outLen, 0.0f);
-        for (int i = 0; i < grain; ++i)
-            win[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / (float) (grain - 1));
-
-        juce::Random rng (12345);
-        const double span = (double) juce::jmax (0, srcLen - grain);
-        const double outSpan = (double) juce::jmax (1, outLen - grain);
-
-        for (int o = 0; o < outLen; o += hop)
-        {
-            const double prog = juce::jmin (1.0, (double) o / outSpan);
-            const int jitter  = (int) ((rng.nextFloat() - 0.5f) * 0.3f * (float) grain);
-            const int in      = juce::jlimit (0, (int) span, (int) (prog * span) + jitter);
-            const int len     = juce::jmin (grain, outLen - o, srcLen - in);
-
-            for (int ch = 0; ch < src.getNumChannels(); ++ch)
-            {
-                const float* s = src.getReadPointer (ch, in);
-                float* d = dst.getWritePointer (ch, o);
-                for (int i = 0; i < len; ++i) d[i] += s[i] * win[(size_t) i];
-            }
-            for (int i = 0; i < len; ++i) norm[(size_t) (o + i)] += win[(size_t) i];
-        }
-
-        for (int ch = 0; ch < dst.getNumChannels(); ++ch)
-        {
-            float* d = dst.getWritePointer (ch);
-            for (int i = 0; i < outLen; ++i) d[i] /= juce::jmax (0.5f, norm[(size_t) i]);
-        }
-    }
 }
 
 //==============================================================================
@@ -626,10 +481,9 @@ void VocalRiserAudioProcessor::renderRiser()
     const int    lenIdx     = jlimit (0, 3, (int) pLength->load());
     const double secPerBeat = 60.0 / bpm;
     const int    Ls         = jmax (256, (int) std::round (beatsTable[lenIdx] * secPerBeat * rate));
-    const int    wordLen    = findFirstWordLength (cap, capLen, capCh, rate);
 
-    // 1) PRIMA SILLABA della prima parola
-    const auto syl = findFirstSyllable (cap, capLen, capCh, wordLen, rate);
+    // 1) PRIMA SILLABA della prima parola (respiri e rumori prima della voce vengono saltati)
+    const auto syl = RiserDsp::findFirstSyllable (cap, capLen, capCh, rate);
     const int  seg = jmax (64, syl.end - syl.start);
     AudioBuffer<float> sylBuf (2, seg);
     for (int ch = 0; ch < 2; ++ch)
@@ -682,8 +536,9 @@ void VocalRiserAudioProcessor::renderRiser()
 
     // 2) CORPO: la sillaba rovesciata e allungata su tutta la durata del riser,
     //    con un velo di riverbero. E' la parte che "suona" come la voce.
+    // Allungamento spettrale: il timbro della sillaba resta, sparisce l'effetto "metallico" dei grani ripetuti
     AudioBuffer<float> body;
-    stretchGranular (rev, seg, body, Ls, rate);
+    RiserDsp::spectralStretch (rev, seg, body, Ls, rate, image == RiserReverbs::monoToStereo);
     {
         AudioBuffer<float> veil;
         veil.makeCopyOf (body);
@@ -693,8 +548,10 @@ void VocalRiserAudioProcessor::renderRiser()
         for (int ch = 0; ch < 2; ++ch) body.addFrom (ch, 0, veil, ch, 0, Ls, 0.45f);
     }
 
-    // 3) CODA: riverbero (con eco a tempo, scura e leggera) della sillaba, rovesciato
-    const int tailLen = jmin (Ls, (int) ((0.8 + 0.9 * amount) * rate));
+    // 3) CODA: riverbero (con eco a tempo, scura e leggera) della sillaba, rovesciato.
+    //    La coda NON viene allungata: e lunga quanto il riverbero vero (al massimo quanto il riser),
+    //    cosi suona naturale e non metallica.
+    const int tailLen = jmin (Ls, (int) (8.0 * rate));
     const int search  = (int) (0.4 * rate);
     const int total   = seg + search + tailLen;
     AudioBuffer<float> wet (2, total);
@@ -712,7 +569,7 @@ void VocalRiserAudioProcessor::renderRiser()
             for (int j = offset; j < total; ++j) w[j] += fb * dark[ch].lp (w[j - offset]);   // ripetizioni sempre piu scure
         }
     }
-    RiserReverbs::apply (wet, total, revType, image, amount, rate);
+    RiserReverbs::apply (wet, total, revType, image, amount, rate, (double) tailLen / rate);
 
     int tailStart = seg;
     {
@@ -736,18 +593,20 @@ void VocalRiserAudioProcessor::renderRiser()
         float* t = tail.getWritePointer (ch);
         for (int j = 0; j < tailLen; ++j) t[j] = w[tailStart + tailLen - 1 - j];
     }
-    AudioBuffer<float> tailOut;
-    if (tailLen < Ls) stretchGranular (tail, tailLen, tailOut, Ls, rate);
-    else              tailOut.makeCopyOf (tail);
+    // la coda finisce dove finisce il riser (sull'attacco della voce)
+    AudioBuffer<float> tailOut (2, Ls);
+    tailOut.clear();
+    for (int ch = 0; ch < 2; ++ch) tailOut.copyFrom (ch, Ls - tailLen, tail, ch, 0, tailLen);
 
-    // 4) MIX: piu INTENSITA = piu ambiente, meno intensita = piu sillaba
+    // 4) MIX: piu INTENSITA = piu ambiente
     AudioBuffer<float> out;
     out.makeCopyOf (body);
     normalise (out, 0.5f);
     normalise (tailOut, 0.5f);
     {
-        const float bodyGain = 0.85f - 0.35f * amount;
-        const float tailGain = 0.45f + 0.55f * amount;
+        // la coda di riverbero vera (non allungata) guida il riser; la sillaba allungata e un letto sotto
+        const float bodyGain = 0.70f - 0.30f * amount;
+        const float tailGain = 0.55f + 0.45f * amount;
         out.applyGain (bodyGain);
         for (int ch = 0; ch < 2; ++ch) out.addFrom (ch, 0, tailOut, ch, 0, Ls, tailGain);
     }
