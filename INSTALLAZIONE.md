@@ -25,7 +25,19 @@ Quale formato usa la tua DAW:
 
 ---
 
-## 1. Copiare il plugin nella cartella giusta
+## Mac: installazione con un comando (consigliata)
+
+Apri il **Terminale** (Cmd + Spazio, scrivi «Terminale»), incolla questa riga e premi Invio:
+
+```
+curl -fsSL https://raw.githubusercontent.com/chefcatta/Vocal-Riser/main/install-mac.sh | bash
+```
+
+Scarica l'ultima versione e la installa in *Macintosh HD → Libreria → Audio → Plug-Ins*. Ti chiederà la password del Mac (mentre la scrivi non compare nulla, è normale). Scaricato così, il plugin **non fa comparire l'avviso di sicurezza di macOS**. Per aggiornare a una nuova versione basta rilanciare la stessa riga. Poi passa direttamente al punto 2 (far trovare il plugin alla DAW).
+
+Se preferisci installarlo a mano, segui il punto 1.
+
+## 1. Copiare il plugin nella cartella giusta (installazione manuale)
 
 > **Avevi la versione precedente "Vocal Riser"?** Il plugin ora si chiama **Chef Riser**. Prima di installarlo cancella i vecchi file `Vocal Riser.component` e `Vocal Riser.vst3` dalle stesse cartelle (Mac) oppure `Vocal Riser.vst3` (Windows). Le sessioni in cui l'avevi già usato si aprono con Chef Riser senza fare nulla.
 

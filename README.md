@@ -15,6 +15,12 @@ Plugin per creare **riser vocali** in pochi secondi, direttamente in sessione. A
 
 Funziona con Logic Pro, GarageBand, Ableton Live, FL Studio, Cubase, Studio One, Reaper, Bitwig e tutte le DAW che leggono Audio Unit o VST3. Pro Tools (AAX) non è ancora supportato.
 
+**Mac, installazione con un comando** (nessun avviso di sicurezza): apri il Terminale e incolla
+
+```
+curl -fsSL https://raw.githubusercontent.com/chefcatta/Vocal-Riser/main/install-mac.sh | bash
+```
+
 📖 **Istruzioni di installazione per ogni DAW: [INSTALLAZIONE.md](INSTALLAZIONE.md)**
 
 ## Come si usa

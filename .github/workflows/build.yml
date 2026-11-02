@@ -3,6 +3,7 @@ name: Build Chef Riser
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'install-mac.sh', 'screenshot.png']
   workflow_dispatch:
 
 jobs:
