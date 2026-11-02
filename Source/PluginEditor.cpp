@@ -70,6 +70,13 @@ namespace
             head.addTriangle (tip.x - 0.5f, tip.y - 3.0f, tip.x + 3.5f, tip.y + 0.5f, tip.x - 2.5f, tip.y + 2.0f);
             g.fillPath (head);
         }
+        else if (icon == "chevron")
+        {
+            p.startNewSubPath (r.getX() + 1.0f, r.getBottom() - 2.5f);
+            p.lineTo (r.getCentreX(), r.getY() + 2.0f);
+            p.lineTo (r.getRight() - 1.0f, r.getBottom() - 2.5f);
+            g.strokePath (p, stroke);
+        }
         else if (icon == "save")
         {
             p.startNewSubPath (r.getCentreX(), r.getY());
@@ -262,6 +269,90 @@ void RiserLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, b
         g.setColour (Colours::accent2);
         g.fillPath (p);
     }
+}
+
+void RiserLookAndFeel::drawCallOutBoxBackground (juce::CallOutBox&, juce::Graphics& g, const juce::Path& path, juce::Image& cache)
+{
+    if (cache.isNull())
+    {
+        cache = juce::Image (juce::Image::ARGB, 1, 1, true);   // (l'ombra la disegniamo direttamente)
+    }
+    juce::DropShadow (juce::Colours::black.withAlpha (0.8f), 18, { 0, 6 }).drawForPath (g, path);
+    const auto b = path.getBounds();
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2a2b30), 0.0f, b.getY(), juce::Colour (0xff1a1b1f), 0.0f, b.getBottom(), false));
+    g.fillPath (path);
+    g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.12f), 0.0f, b.getY(),
+                                             juce::Colours::black.withAlpha (0.5f), 0.0f, b.getBottom(), false));
+    g.strokePath (path, juce::PathStrokeType (1.0f));
+}
+
+void RiserLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float,
+                                         juce::Slider::SliderStyle, juce::Slider& s)
+{
+    const auto r = juce::Rectangle<int> (x, y, w, h).toFloat();
+    const float cy = r.getCentreY();
+    const auto track = juce::Rectangle<float> (r.getX(), cy - 2.0f, r.getWidth(), 4.0f);
+
+    // binario scavato
+    g.setColour (juce::Colour (0xff0d0e10));
+    g.fillRoundedRectangle (track, 2.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.06f));
+    g.drawHorizontalLine ((int) track.getBottom(), track.getX() + 2.0f, track.getRight() - 2.0f);
+
+    // parte attiva, luminosa
+    const float px = juce::jlimit (r.getX(), r.getRight(), pos);
+    auto fill = track.withRight (px);
+    juce::Path fp; fp.addRoundedRectangle (fill, 2.0f);
+    juce::DropShadow (Colours::accent.withAlpha (0.7f), 6, {}).drawForPath (g, fp);
+    g.setGradientFill (juce::ColourGradient (Colours::accent, track.getX(), 0.0f, Colours::accent2, px, 0.0f, false));
+    g.fillPath (fp);
+
+    // cursore in rilievo
+    const float kr = 7.5f;
+    juce::Path knob; knob.addEllipse (px - kr, cy - kr, kr * 2.0f, kr * 2.0f);
+    juce::DropShadow (juce::Colours::black.withAlpha (0.8f), 5, { 0, 2 }).drawForPath (g, knob);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4a4c53), px, cy - kr, juce::Colour (0xff1c1d21), px, cy + kr, false));
+    g.fillPath (knob);
+    g.setColour (s.isMouseOverOrDragging() ? Colours::accent2 : juce::Colours::white.withAlpha (0.5f));
+    g.fillEllipse (px - 1.5f, cy - 1.5f, 3.0f, 3.0f);
+}
+
+//==============================================================================
+StutterPanel::StutterPanel (VocalRiserAudioProcessor& p)
+    : timing (*p.apvts.getParameter ("stutRate"), "TIMING", { "1/4", "1/8", "1/16" })
+{
+    addAndMakeVisible (timing);
+
+    depth.setSliderStyle (juce::Slider::LinearHorizontal);
+    depth.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    depth.setDoubleClickReturnValue (true, 0.5);
+    depth.onValueChange = [this] { repaint(); };
+    addAndMakeVisible (depth);
+    depthAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.apvts, "stutDepth", depth);
+
+    pingPong.setClickingTogglesState (true);
+    pingPong.getProperties().set ("led", true);
+    addAndMakeVisible (pingPong);
+    ppAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "pingPong", pingPong);
+}
+
+void StutterPanel::paint (juce::Graphics& g)
+{
+    g.setFont (labelFont (8.5f, 0.2f));
+    const auto d = depth.getBounds().toFloat();
+    engravedText (g, juce::CharPointer_UTF8 ("QUANTIT\xc3\x80"), { d.getX(), d.getY() - 13.0f, 100.0f, 12.0f }, juce::Justification::centredLeft, Colours::dim);
+    engravedText (g, juce::String (juce::roundToInt (depth.getValue() * 100.0)) + " %",
+                  { d.getRight() - 60.0f, d.getY() - 13.0f, 60.0f, 12.0f }, juce::Justification::centredRight, Colours::text);
+}
+
+void StutterPanel::resized()
+{
+    auto r = getLocalBounds().reduced (4, 0);
+    timing.setBounds (r.removeFromTop (36).withSizeKeepingCentre (150, 36));
+    r.removeFromTop (16);
+    depth.setBounds (r.removeFromTop (20).reduced (4, 0));
+    r.removeFromTop (4);
+    pingPong.setBounds (r.removeFromTop (34).withSizeKeepingCentre (130, 34));
 }
 
 //==============================================================================
@@ -486,8 +577,7 @@ static void drawDotCorner (juce::Graphics& g, juce::Point<float> corner, float d
 VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioProcessor& p)
     : AudioProcessorEditor (&p), proc (p), wave (p),
       lengthSel (*p.apvts.getParameter ("length"), "DURATA", { "1/4 BAR", "1/2 BAR", "1 BAR", "2 BAR" }),
-      reverbSel (*p.apvts.getParameter ("revType"), "AMBIENTE", { "HALL", "PLATE", "SPACE" }),
-      timingSel (*p.apvts.getParameter ("stutRate"), "TIMING STUTTER", { "1/4", "1/8", "1/16" })
+      reverbSel (*p.apvts.getParameter ("revType"), "AMBIENTE", { "HALL", "PLATE", "SPACE" })
 {
     setLookAndFeel (&lnf);
     auto& apvts = proc.apvts;
@@ -537,7 +627,11 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     // Selettori
     addAndMakeVisible (lengthSel);
     addAndMakeVisible (reverbSel);
-    addAndMakeVisible (timingSel);
+    // Freccia accanto a STUTTER: apre il menu con TIMING, QUANTITA e PING PONG
+    stutMenuBtn.getProperties().set ("icon", "chevron");
+    stutMenuBtn.setTooltip ("Opzioni dello stutter");
+    stutMenuBtn.onClick = [this] { openStutterMenu(); };
+    addAndMakeVisible (stutMenuBtn);
 
     stereoBtn.setClickingTogglesState (true);
     stereoBtn.getProperties().set ("size", 11.5f);
@@ -565,6 +659,8 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
 
 VocalRiserAudioProcessorEditor::~VocalRiserAudioProcessorEditor()
 {
+    stutMenu.reset();      // prima il riquadro del menu...
+    stutPanel.reset();     // ...poi il suo contenuto
     stopTimer();
     setLookAndFeel (nullptr);
 }
@@ -781,16 +877,34 @@ void VocalRiserAudioProcessorEditor::resized()
 
     int y = intensityArea.getBottom() + 18;
     auto sel = juce::Rectangle<int> (shell.getX() + 18, y, shell.getWidth() - 36, 40);
-    const int sw = sel.getWidth() / 4;
-    lengthSel.setBounds (sel.removeFromLeft (sw).reduced (2, 0));
-    stereoBtn.setBounds (sel.removeFromLeft (sw).reduced (2, 0).withTrimmedTop (12));
-    reverbSel.setBounds (sel.removeFromLeft (sw).reduced (2, 0));
-    timingSel.setBounds (sel.reduced (2, 0));
+    sel = sel.reduced (20, 0);
+    const int sw = sel.getWidth() / 3;
+    lengthSel.setBounds (sel.removeFromLeft (sw).reduced (4, 0));
+    stereoBtn.setBounds (sel.removeFromLeft (sw).reduced (4, 0).withTrimmedTop (12));
+    reverbSel.setBounds (sel.reduced (4, 0));
 
     y += 40 + 18;
     auto fx = juce::Rectangle<int> (shell.getX() + 30, y, shell.getWidth() - 60, 32);
     const int fw = fx.getWidth() / 4;
     for (auto& b : fxBtns) b.setBounds (fx.removeFromLeft (fw));
+
+    // la freccia sta subito a destra della scritta STUTTER
+    const auto sb = fxBtns[1].getBounds();
+    stutMenuBtn.setBounds (sb.getRight() - 14, sb.getY() + 3, 18, 18);
+}
+
+void VocalRiserAudioProcessorEditor::openStutterMenu()
+{
+    if (stutMenu != nullptr && stutMenu->isVisible())
+    {
+        stutMenu->dismiss();
+        return;
+    }
+    stutMenu.reset();
+    stutPanel = std::make_unique<StutterPanel> (proc);
+    stutPanel->setSize (220, 124);
+    stutMenu = std::make_unique<juce::CallOutBox> (*stutPanel, fxBtns[1].getBounds(), this);
+    stutMenu->enterModalState (true, nullptr, false);   // un clic fuori dal menu lo chiude
 }
 
 void VocalRiserAudioProcessorEditor::timerCallback()
@@ -808,7 +922,6 @@ void VocalRiserAudioProcessorEditor::timerCallback()
     if (st != lastStatus) { lastStatus = st; repaint (displayArea.withHeight (52)); }
 
     saveBtn.setEnabled (proc.hasRender());
-    timingSel.setEnabled (fxBtns[1].getToggleState());
     captureBtn.setToggleState (proc.getCaptureState() != VocalRiserAudioProcessor::stateIdle, juce::dontSendNotification);
 
     // Voce stereo: resta stereo, il selettore si blocca su STEREO

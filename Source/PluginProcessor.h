@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <vector>
+#include <algorithm>
 
 //==============================================================================
 class RiserRenderThread;
@@ -31,7 +32,13 @@ public:
     bool acceptsMidi() const override  { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    // Logic smette di far lavorare un Audio Unit quando l'ingresso resta in silenzio piu a lungo
+    // della coda dichiarata: con 0 s il LOOP (che suona a DAW ferma, con ingresso muto)
+    // partiva una volta e poi si fermava. Per l'AU dichiariamo quindi una coda lunga.
+    double getTailLengthSeconds() const override
+    {
+        return wrapperType == wrapperType_AudioUnit ? 3600.0 : 0.0;
+    }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -102,7 +109,8 @@ private:
     std::atomic<float>* pFilterOn = nullptr; std::atomic<float>* pStutOn = nullptr;
     std::atomic<float>* pPhoneOn = nullptr;  std::atomic<float>* pChorusOn = nullptr;
     std::atomic<float>* pRevType = nullptr;  std::atomic<float>* pStereoOn = nullptr;
-    std::atomic<float>* pStutRate = nullptr;
+    std::atomic<float>* pStutRate = nullptr; std::atomic<float>* pStutDepth = nullptr;
+    std::atomic<float>* pPingPong = nullptr;
 
     double sr = 0.0;
 
