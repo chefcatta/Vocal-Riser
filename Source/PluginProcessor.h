@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
@@ -54,17 +55,8 @@ public:
 
     //== Cattura (chiamate dal message thread) ==================================
     void armCapture()               { captureState.store (stateArmed); }
-    void resetParameters()
-    {
-        for (auto* prm : getParameters())
-            if (auto* r = dynamic_cast<juce::RangedAudioParameter*> (prm))
-            {
-                r->beginChangeGesture();
-                r->setValueNotifyingHost (r->getDefaultValue());
-                r->endChangeGesture();
-            }
-        previewLoop.store (false);
-    }
+    // RESET: cancella l'audio catturato (per catturare una nuova sezione), i controlli restano come sono
+    void clearCapture();
     int  getCaptureState() const    { return captureState.load(); }
     bool hasCapture() const         { return publishedIdx.load() >= 0; }
     int  getSourceStereo() const    { return sourceStereo.load(); } // -1 = nessuna cattura, 0 = mono, 1 = stereo
@@ -78,19 +70,28 @@ public:
     juce::String getRenderInfo() const;
     juce::File writeRiserFile();         // scrive il WAV (una volta per render)
 
-    //== Anteprima in loop (suona solo a trasporto fermo) =====================
-    std::atomic<bool>  previewLoop { false };     // pulsante LOOP
+    //== Anteprima in loop (suona solo a DAW ferma) ============================
+    // Con il LOOP acceso l'anteprima esce da un'uscita audio aperta dal plugin stesso
+    // (l'uscita del Mac/PC), cosi funziona anche se la DAW, a trasporto fermo, non chiama
+    // il plugin. Se l'uscita non si puo aprire si usa il vecchio metodo (audio della DAW).
+    void setPreviewLoop (bool shouldLoop);          // solo dal message thread
+    bool getPreviewLoop() const                     { return previewLoop.load(); }
+    bool isUsingPreviewDevice() const               { return usingPreviewDevice.load(); }
     std::atomic<float> previewProgress { 0.0f };
+
     bool isHostProcessing() const
     {
         return juce::Time::getMillisecondCounter() - lastProcessMs.load() < 300;
     }
     bool isPreviewPlaying() const
     {
-        // vale solo se l'host sta davvero chiamando processBlock (Logic smette se la traccia non e selezionata)
-        return previewPlaying.load()
-            && juce::Time::getMillisecondCounter() - lastProcessMs.load() < 300;
+        if (usingPreviewDevice.load()) return devicePlaying.load();
+        // vale solo se l'host sta davvero chiamando processBlock
+        return previewPlaying.load() && isHostProcessing();
     }
+
+    // Riempie un blocco dell'uscita audio dell'anteprima (chiamata dal thread audio del dispositivo; pubblica per i test)
+    void renderPreviewToDevice (float* const* out, int numOut, int numSamples, double deviceSampleRate);
 
 private:
     friend class RiserRenderThread;
@@ -104,6 +105,23 @@ private:
 
     std::atomic<bool>     previewPlaying { false };
     std::atomic<juce::uint32> lastProcessMs { 0 };
+    std::atomic<bool>     previewLoop { false };
+    std::atomic<bool>     hostPlaying { false };
+
+    // uscita audio propria per l'anteprima
+    void openPreviewDevice();
+    void closePreviewDevice();
+    struct PreviewDeviceCallback;
+    std::unique_ptr<juce::AudioDeviceManager> previewDevice;
+    std::unique_ptr<juce::AudioIODeviceCallback> previewCallback;
+    std::atomic<bool>   usingPreviewDevice { false }, devicePlaying { false };
+    std::atomic<double> previewSr { 44100.0 };
+    std::atomic<int>    previewGap { 0 };
+    double devicePos = 0.0;      // solo thread del dispositivo
+    int    deviceLastLen = 0;    // solo thread del dispositivo
+
+    std::atomic<bool> clearRequested { false };
+    std::atomic<int>  captureEpoch { 0 };          // cambia a ogni RESET: i render vecchi non vengono pubblicati
 
     std::atomic<float>* pAmount = nullptr;  std::atomic<float>* pLength = nullptr;
     std::atomic<float>* pFilterOn = nullptr; std::atomic<float>* pStutOn = nullptr;

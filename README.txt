@@ -28,14 +28,18 @@ USA
   1. Metti Chef Riser sulla traccia della voce.
   2. Premi CATTURA, poi play sulla frase.
   3. Regola INTENSITÀ, DURATA, AMBIENTE e gli effetti.
-  4. Accendi LOOP per ascoltarlo a DAW ferma (in Logic tieni la traccia selezionata).
+  4. Accendi LOOP e ferma la DAW: il riser suona in loop
+     dall'uscita audio del Mac. Quando premi play si zittisce.
   5. Trascina la forma d'onda nella timeline: finisce dove attacca la voce.
      SALVA lo esporta in Documenti/Chef Riser.
 
+  Il riser esce con il picco a -9 dB.
+  RESET cancella la frase catturata e lascia i controlli come sono.
   La freccia accanto a STUTTER apre timing, quantità e ping pong.
 
 
 SE QUALCOSA NON VA
   Mac dice "non è stata aperta": usa il comando di installazione qui sopra.
   La DAW non lo trova: rifai la scansione dei plugin.
-  Il loop non si sente in Logic: seleziona la traccia del plugin.
+  Il loop non si sente: scegli la tua scheda audio come uscita
+  in Impostazioni di Sistema > Suono > Uscita.

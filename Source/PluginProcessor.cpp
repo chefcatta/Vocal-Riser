@@ -210,6 +210,8 @@ VocalRiserAudioProcessor::VocalRiserAudioProcessor()
 
 VocalRiserAudioProcessor::~VocalRiserAudioProcessor()
 {
+    closePreviewDevice();
+
     renderThread->signalThreadShouldExit();
     renderThread->notify();
     renderThread->stopThread (4000);
@@ -336,7 +338,16 @@ void VocalRiserAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         }
     bpm = juce::jlimit (40.0, 300.0, bpm);
 
+    hostPlaying.store (playing);
+
     int state = captureState.load();
+    if (clearRequested.exchange (false))
+    {
+        // se dopo RESET hai gia premuto CATTURA, resta in ascolto
+        if (state != stateArmed) state = stateIdle;
+        recLen = 0;
+        silenceCount = 0;
+    }
 
     if (! playing && wasPlaying && state == stateRecording)
         finishCapture (state);
@@ -389,7 +400,7 @@ void VocalRiserAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 
     // --- Anteprima in loop: solo quando il trasporto della DAW e fermo -------
     bool playingPreview = false;
-    if (previewLoop.load() && ! playing)
+    if (previewLoop.load() && ! playing && ! usingPreviewDevice.load())
     {
         const juce::SpinLock::ScopedTryLockType lock (previewLock);
         if (lock.isLocked() && previewBuf != nullptr && previewBuf->getNumSamples() > 0)
@@ -420,6 +431,142 @@ void VocalRiserAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
 }
 
 //==============================================================================
+void VocalRiserAudioProcessor::clearCapture()
+{
+    captureEpoch.fetch_add (1);
+    clearRequested.store (true);
+    captureState.store (stateIdle);
+    {
+        const juce::ScopedLock sl (captureLock);
+        publishedIdx.store (-1);
+        captureLens = { 0, 0 };
+        restored.reset();
+    }
+    {
+        const juce::ScopedLock sl (resultLock);
+        rendered.reset();
+        peaks.reset();
+        renderInfo = {};
+        renderedFile = juce::File();
+    }
+    std::unique_ptr<juce::AudioBuffer<float>> old;
+    {
+        const juce::SpinLock::ScopedLockType lock (previewLock);
+        std::swap (old, previewBuf);
+        previewPos.store (0);
+    }
+    renderReady.store (false);
+    sourceStereo.store (-1);
+    renderGeneration.fetch_add (1);
+}
+
+//==============================================================================
+struct VocalRiserAudioProcessor::PreviewDeviceCallback : public juce::AudioIODeviceCallback
+{
+    explicit PreviewDeviceCallback (VocalRiserAudioProcessor& p) : owner (p) {}
+
+    void audioDeviceIOCallbackWithContext (const float* const*, int, float* const* out, int numOut,
+                                           int numSamples, const juce::AudioIODeviceCallbackContext&) override
+    {
+        owner.renderPreviewToDevice (out, numOut, numSamples, deviceSr);
+    }
+    void audioDeviceAboutToStart (juce::AudioIODevice* d) override { deviceSr = d->getCurrentSampleRate(); }
+    void audioDeviceStopped() override {}
+
+    VocalRiserAudioProcessor& owner;
+    double deviceSr = 44100.0;
+};
+
+void VocalRiserAudioProcessor::setPreviewLoop (bool shouldLoop)
+{
+    previewLoop.store (shouldLoop);
+    if (shouldLoop) openPreviewDevice();
+    else            closePreviewDevice();
+}
+
+void VocalRiserAudioProcessor::openPreviewDevice()
+{
+    if (previewDevice != nullptr) return;
+
+    auto dm = std::make_unique<juce::AudioDeviceManager>();
+    const auto err = dm->initialiseWithDefaultDevices (0, 2);    // solo uscita: nessuna richiesta del microfono
+    if (err.isNotEmpty() || dm->getCurrentAudioDevice() == nullptr)
+    {
+        usingPreviewDevice.store (false);                        // si torna all'audio della DAW
+        return;
+    }
+    devicePos = 0.0;
+    deviceLastLen = 0;
+    previewCallback = std::make_unique<PreviewDeviceCallback> (*this);
+    dm->addAudioCallback (previewCallback.get());
+    previewDevice = std::move (dm);
+    usingPreviewDevice.store (true);
+}
+
+void VocalRiserAudioProcessor::closePreviewDevice()
+{
+    usingPreviewDevice.store (false);
+    devicePlaying.store (false);
+    if (previewDevice != nullptr)
+    {
+        previewDevice->removeAudioCallback (previewCallback.get());
+        previewDevice->closeAudioDevice();
+        previewDevice.reset();
+    }
+    previewCallback.reset();
+}
+
+void VocalRiserAudioProcessor::renderPreviewToDevice (float* const* out, int numOut, int numSamples, double deviceSampleRate)
+{
+    for (int ch = 0; ch < numOut; ++ch)
+        if (out[ch] != nullptr) juce::FloatVectorOperations::clear (out[ch], numSamples);
+
+    // DAW ferma = l'host non sta suonando, oppure non chiama piu il plugin da un po'
+    const bool dawStopped = ! hostPlaying.load()
+                         || juce::Time::getMillisecondCounter() - lastProcessMs.load() > 150;
+
+    if (! previewLoop.load() || ! dawStopped)
+    {
+        devicePlaying.store (false);
+        devicePos = 0.0;                    // alla prossima pausa riparte dall'inizio
+        return;
+    }
+
+    const juce::SpinLock::ScopedTryLockType lock (previewLock);
+    if (! lock.isLocked() || previewBuf == nullptr || previewBuf->getNumSamples() < 2)
+    {
+        devicePlaying.store (false);
+        return;
+    }
+
+    const int len = previewBuf->getNumSamples();
+    if (deviceLastLen > 0 && len != deviceLastLen)
+        devicePos *= (double) len / (double) deviceLastLen;     // nuovo riser: stessa posizione in proporzione
+    deviceLastLen = len;
+
+    const double ratio = previewSr.load() / juce::jmax (1.0, deviceSampleRate);
+    const double cycle = (double) (len + previewGap.load());
+    const float* src[2] = { previewBuf->getReadPointer (0), previewBuf->getReadPointer (juce::jmin (1, previewBuf->getNumChannels() - 1)) };
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        if (devicePos >= cycle) devicePos -= cycle;
+        if (devicePos < (double) (len - 1))
+        {
+            const int    k = (int) devicePos;
+            const float  f = (float) (devicePos - (double) k);
+            for (int ch = 0; ch < juce::jmin (numOut, 2); ++ch)
+                if (out[ch] != nullptr)
+                    out[ch][i] = src[ch][k] + f * (src[ch][k + 1] - src[ch][k]);
+            if (numOut == 1 && out[0] != nullptr)                 // uscita mono
+                out[0][i] = 0.5f * (out[0][i] + src[1][k] + f * (src[1][k + 1] - src[1][k]));
+        }
+        devicePos += ratio;
+    }
+    previewProgress.store (juce::jmin (1.0f, (float) (devicePos / (double) len)));
+    devicePlaying.store (true);
+}
+
 void VocalRiserAudioProcessor::requestRenderIfNeeded()
 {
     if (! hasCapture()) return;
@@ -448,6 +595,9 @@ juce::String VocalRiserAudioProcessor::getRenderInfo() const
 void VocalRiserAudioProcessor::renderRiser()
 {
     using namespace juce;
+
+    const int epoch = captureEpoch.load();
+    constexpr float outputPeakDb = -9.0f;   // livello di uscita del riser
 
     // Copia locale della cattura: da qui in poi il render non tocca piu i buffer dell'audio thread
     AudioBuffer<float> cap;
@@ -678,8 +828,8 @@ void VocalRiserAudioProcessor::renderRiser()
     if (image == RiserReverbs::monoOut)
         out.copyFrom (1, 0, out, 0, 0, Ls);   // uscita mono: L e R identici
 
-    // 5) Normalizza a -1 dBFS e micro-fade
-    normalise (out, Decibels::decibelsToGain (-1.0f));
+    // 6) Picco a -9 dBFS (in linea con le altre tracce del progetto) e micro-fade
+    normalise (out, Decibels::decibelsToGain (outputPeakDb));
     const int fadeIn = jmin (Ls / 4, (int) (0.01 * rate));
     const int fadeOut = jmin (Ls / 4, (int) (0.002 * rate));
     for (int ch = 0; ch < 2; ++ch)
@@ -701,7 +851,11 @@ void VocalRiserAudioProcessor::renderRiser()
         (*newPeaks)[(size_t) b] = m;
     }
 
-    // 9) Pubblica il risultato
+    // 9) Pubblica il risultato (a meno che nel frattempo non sia stato premuto RESET)
+    if (captureEpoch.load() != epoch)
+        return;
+    previewSr.store (rate);
+    previewGap.store ((int) (secPerBeat * rate));
     {
         const ScopedLock sl (resultLock);
         rendered     = std::make_shared<const AudioBuffer<float>> (out);

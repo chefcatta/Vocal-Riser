@@ -10,9 +10,6 @@ public:
                            float startAngle, float endAngle, juce::Slider&) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool, bool) override;
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool highlighted, bool down) override;
-    void drawCallOutBoxBackground (juce::CallOutBox&, juce::Graphics&, const juce::Path&, juce::Image&) override;
-    int  getCallOutBoxBorderSize (const juce::CallOutBox&) override { return 18; }
-    float getCallOutBoxCornerSize (const juce::CallOutBox&) override { return 10.0f; }
     void drawLinearSlider (juce::Graphics&, int x, int y, int w, int h, float pos, float minPos, float maxPos,
                            juce::Slider::SliderStyle, juce::Slider&) override;
 
@@ -70,13 +67,18 @@ private:
 };
 
 //==============================================================================
-// Menu delle opzioni dello stutter, aperto sopra il pulsante STUTTER
-class StutterPanel : public juce::Component
+// Menu delle opzioni dello stutter: piccolo riquadro con la punta verso STUTTER.
+// E' un normale componente figlio dell'editor (niente finestre modali): si apre con la
+// freccia accanto a STUTTER e si chiude con un clic fuori o di nuovo sulla freccia.
+class StutterPopup : public juce::Component
 {
 public:
-    explicit StutterPanel (VocalRiserAudioProcessor&);
+    explicit StutterPopup (VocalRiserAudioProcessor&);
     void paint (juce::Graphics&) override;
     void resized() override;
+    void setArrowX (float x) { arrowX = x; repaint(); }
+
+    static constexpr int width = 168, height = 112, arrowH = 7;
 
 private:
     ArrowSelector timing;
@@ -84,6 +86,7 @@ private:
     juce::TextButton pingPong { "PING PONG" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> depthAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> ppAtt;
+    float arrowX = width * 0.5f;
 };
 
 //==============================================================================
@@ -96,6 +99,10 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;   // clic fuori dal menu dello stutter = chiudi
+
+    void showStutterMenu (bool show);
+    bool isStutterMenuVisible() const { return stutPopup.isVisible(); }
 
 private:
     void timerCallback() override;
@@ -119,13 +126,9 @@ private:
     juce::Slider amountKnob;
     ArrowSelector lengthSel, reverbSel;
     juce::TextButton stutMenuBtn;                       // freccia che apre il menu dello stutter
-    // Il menu e posseduto dall'editor: se si chiude la finestra con il menu aperto
-    // viene distrutto insieme (prima il riquadro, poi il contenuto).
-    std::unique_ptr<juce::Component> stutPanel;
-    std::unique_ptr<juce::CallOutBox> stutMenu;
-    void openStutterMenu();
     juce::TextButton stereoBtn { "STEREO" };
     std::array<juce::TextButton, 4> fxBtns;
+    StutterPopup stutPopup;                              // dichiarato dopo i pulsanti: si costruisce dopo e si distrugge prima
 
     std::unique_ptr<SliderAtt> amountAtt;
     std::vector<std::unique_ptr<ButtonAtt>> buttonAtts;
