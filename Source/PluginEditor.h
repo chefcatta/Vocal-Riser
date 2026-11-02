@@ -106,7 +106,6 @@ public:
 
 private:
     void timerCallback() override;
-    juce::String statusText() const;
     void paintStatic (juce::Graphics&);
 
     juce::Image bgCache;
@@ -137,7 +136,6 @@ private:
     juce::Path displayShape;                 // display con l'incavo per la manopola
     juce::Point<float> knobCentre;
     float notchRadius = 0.0f;
-    juce::String lastStatus;
     bool lastPreviewPlaying = false;
     int lastSourceStereo = -2;
 

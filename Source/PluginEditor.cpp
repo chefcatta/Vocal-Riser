@@ -88,6 +88,31 @@ namespace
             p.lineTo (r.getRight(), r.getBottom());
             g.strokePath (p, stroke);
         }
+        else if (icon == "checkOff" || icon == "checkOn")
+        {
+            // casella di spunta: quadratino incassato, acceso e con la spunta quando e selezionata
+            const auto box = r.reduced (0.5f);
+            if (icon == "checkOn")
+            {
+                juce::Path b; b.addRoundedRectangle (box, 2.5f);
+                juce::DropShadow (Colours::accent.withAlpha (0.8f), 6, {}).drawForPath (g, b);
+                g.setColour (Colours::accent);
+                g.fillPath (b);
+                juce::Path tick;
+                tick.startNewSubPath (box.getX() + box.getWidth() * 0.24f, box.getCentreY() + 0.2f);
+                tick.lineTo (box.getX() + box.getWidth() * 0.43f, box.getBottom() - box.getHeight() * 0.26f);
+                tick.lineTo (box.getRight() - box.getWidth() * 0.22f, box.getY() + box.getHeight() * 0.27f);
+                g.setColour (juce::Colours::white);
+                g.strokePath (tick, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+            else
+            {
+                g.setColour (juce::Colour (0xff121316));
+                g.fillRoundedRectangle (box, 2.5f);
+                g.setColour (c.withMultipliedAlpha (0.8f));
+                g.drawRoundedRectangle (box, 2.5f, 1.0f);
+            }
+        }
     }
 }
 
@@ -230,9 +255,10 @@ void RiserLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b,
 
 void RiserLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool highlighted, bool down)
 {
-    const auto icon = b.getProperties()["icon"].toString();
     const bool forced = (bool) b.getProperties()["forceOn"];
     const bool on   = b.getToggleState() || forced;
+    auto icon = b.getProperties()["icon"].toString();
+    if (b.getProperties()["check"]) icon = on ? "checkOn" : "checkOff";
     auto r = b.getLocalBounds().toFloat();
     if (down) r.translate (0.0f, 1.0f);
 
@@ -241,8 +267,9 @@ void RiserLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, b
 
     const auto text  = b.getButtonText();
     const float tw   = juce::GlyphArrangement::getStringWidth (font, text);
-    const float iw   = icon.isNotEmpty() ? 9.0f : 0.0f;
-    const float gap  = icon.isNotEmpty() ? 6.0f : 0.0f;
+    const bool  isCheck = icon.startsWith ("check");
+    const float iw   = icon.isNotEmpty() ? (isCheck ? 11.0f : 9.0f) : 0.0f;
+    const float gap  = icon.isNotEmpty() ? (isCheck ? 8.0f : 6.0f) : 0.0f;
     float xx = r.getCentreX() - (iw + gap + tw) * 0.5f;
     const float alpha = (b.isEnabled() || forced) ? 1.0f : 0.45f;
 
@@ -317,6 +344,7 @@ StutterPopup::StutterPopup (VocalRiserAudioProcessor& p)
 
     pingPong.setClickingTogglesState (true);
     pingPong.getProperties().set ("size", 9.5f);
+    pingPong.getProperties().set ("check", true);      // semplice opzione con casella di spunta
     addAndMakeVisible (pingPong);
     ppAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "pingPong", pingPong);
 
@@ -495,9 +523,6 @@ void RiserWaveView::paint (juce::Graphics& g)
         g.setColour (juce::Colours::white);
         g.fillEllipse (px - 2.0f, mid - 2.0f, 4.0f, 4.0f);
     }
-
-    g.setFont (labelFont (9.0f, 0.12f));
-    engravedText (g, proc.getRenderInfo().toUpperCase(), r.removeFromBottom (12.0f), juce::Justification::centred, Colours::dim);
 }
 
 void RiserWaveView::mouseDrag (const juce::MouseEvent& e)
@@ -667,21 +692,6 @@ VocalRiserAudioProcessorEditor::~VocalRiserAudioProcessorEditor()
     setLookAndFeel (nullptr);
 }
 
-juce::String VocalRiserAudioProcessorEditor::statusText() const
-{
-    switch (proc.getCaptureState())
-    {
-        case VocalRiserAudioProcessor::stateArmed:     return "IN ASCOLTO";
-        case VocalRiserAudioProcessor::stateRecording: return "CATTURA IN CORSO";
-        default: break;
-    }
-    if (! proc.hasRender())            return "PREMI CATTURA, POI PLAY";
-    if (proc.isPreviewPlaying())       return "LOOP";
-    if (proc.getPreviewLoop() && ! proc.isUsingPreviewDevice() && ! proc.isHostProcessing())
-        return "LOOP: SELEZIONA LA TRACCIA";       // Logic a trasporto fermo processa solo la traccia selezionata
-    return juce::CharPointer_UTF8 ("TRASCINA NELLA SESSIONE \xe2\x86\x97");
-}
-
 //==============================================================================
 void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
 {
@@ -700,11 +710,6 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawImage (bgCache, getLocalBounds().toFloat());
 
     // Parti che cambiano
-    const auto d = displayArea.toFloat();
-    g.setFont (labelFont (8.5f, 0.16f));
-    engravedText (g, statusText(), { d.getCentreX() - 140.0f, d.getY() + 36.0f, 280.0f, 12.0f },
-                  juce::Justification::centred, proc.isPreviewPlaying() ? Colours::accent2 : Colours::dim);
-
     auto lab = intensityArea.toFloat().withTrimmedTop (12.0f);
     g.setFont (labelFont (12.5f, 0.12f));
     engravedText (g, juce::String (juce::roundToInt (amountKnob.getValue() * 100.0)) + " %", lab,
@@ -929,8 +934,6 @@ void VocalRiserAudioProcessorEditor::timerCallback()
     lastGeneration = gen;
     lastPreviewPlaying = playingPreview;
 
-    const auto st = statusText();
-    if (st != lastStatus) { lastStatus = st; repaint (displayArea.withHeight (52)); }
 
     saveBtn.setEnabled (proc.hasRender());
     captureBtn.setToggleState (proc.getCaptureState() != VocalRiserAudioProcessor::stateIdle, juce::dontSendNotification);

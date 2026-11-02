@@ -769,10 +769,11 @@ void VocalRiserAudioProcessor::renderRiser()
     static constexpr double stutDiv[] = { 1.0, 0.5, 0.25 };   // 1/4, 1/8, 1/16
     const double stutPeriod = secPerBeat * rate * stutDiv[jlimit (0, 2, (int) pStutRate->load())];
 
-    // Stutter musicale: attacco rapido ma morbido, rilascio piu lento (niente click),
-    // profondita dosata che cresce verso la fine del riser
-    const float attCoeff = 1.0f - std::exp (-1.0f / (0.003f * (float) rate));
-    const float relCoeff = 1.0f - std::exp (-1.0f / (0.018f * (float) rate));
+    // Stutter: QUANTITA regola quanto scende il volume nelle pause.
+    // 0 % = -5 dB, 100 % = silenzio. Attacco e rilascio morbidi: niente click anche al 100 %.
+    const float stutFloor = Decibels::decibelsToGain (-5.0f) * (1.0f - jlimit (0.0f, 1.0f, stutAmt));
+    const float attCoeff = 1.0f - std::exp (-1.0f / (0.004f * (float) rate));
+    const float relCoeff = 1.0f - std::exp (-1.0f / (0.012f * (float) rate));
     float gate[2] = { 1.0f, 1.0f };
 
     for (int j = 0; j < Ls; ++j)
@@ -783,16 +784,15 @@ void VocalRiserAudioProcessor::renderRiser()
             hp.setCutoffFrequency (20.0f * std::pow (fMax / 20.0f, p));
 
         float target[2] = { 1.0f, 1.0f };
-        if (stutOn && stutAmt > 0.0f)
+        if (stutOn)
         {
             double ph = (double) (Ls - 1 - j) / stutPeriod;    // allineato alla fine (attacco della voce)
             ph -= std::floor (ph);
-            const float depth = stutAmt * (0.4f + 0.6f * p);   // piu leggero all'inizio, piu marcato alla fine
             const bool  onL   = ph < 0.55;
             // ping pong: il destro suona quando il sinistro tace, e viceversa
             const bool  onR   = pingPong ? (ph >= 0.45) : onL;
-            target[0] = onL ? 1.0f : 1.0f - depth;
-            target[1] = onR ? 1.0f : 1.0f - depth;
+            target[0] = onL ? 1.0f : stutFloor;
+            target[1] = onR ? 1.0f : stutFloor;
         }
         for (int ch = 0; ch < 2; ++ch)
             gate[ch] += (target[ch] > gate[ch] ? attCoeff : relCoeff) * (target[ch] - gate[ch]);
