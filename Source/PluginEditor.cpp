@@ -25,6 +25,10 @@ namespace Ink
 // Varianti grafiche (per scegliere lo stile): 0 quaderno, 1 lavagna, 2 tovaglia
 int riserThemeId = 2;   // scelta: tovaglia a quadri
 
+// L'interfaccia si disegna in coordinate "logiche" 460 x 652 e viene ingrandita del 25%
+static constexpr float uiScale  = 1.25f;
+static constexpr int   logicalW = 460, logicalH = 652;
+
 static void applyTheme (int id)
 {
     using juce::Colour;
@@ -660,9 +664,12 @@ void RiserWaveView::rebuildLayers (float scale)
 
     if (peaks == nullptr || peaks->empty()) return;
 
-    auto inner = getLocalBounds().toFloat().reduced (6.0f, 10.0f);
+    auto inner = getLocalBounds().toFloat().reduced ((float) getWidth() * 0.015f, (float) getHeight() * 0.08f);
     const float mid  = inner.getCentreY();
     const int   bars = juce::jmax (24, (int) (inner.getWidth() / 4.0f));
+    float peakMax = 0.0f;
+    for (auto v : *peaks) peakMax = juce::jmax (peakMax, v);
+    const float norm = peakMax > 1.0e-6f ? 0.92f / peakMax : 1.0f;   // la barra piu alta riempie quasi tutto il riquadro
     const float bw   = inner.getWidth() / (float) bars;
     const float half = inner.getHeight() * 0.5f;
     const int   nb   = (int) peaks->size();
@@ -675,7 +682,7 @@ void RiserWaveView::rebuildLayers (float scale)
         const int k0 = i * nb / bars, k1 = juce::jmax (k0 + 1, (i + 1) * nb / bars);
         float m = 0.0f;
         for (int k = k0; k < k1; ++k) m = juce::jmax (m, (*peaks)[(size_t) k]);
-        const float hh = juce::jmax (1.2f, m * half);
+        const float hh = juce::jmax (1.2f, m * norm * half);
         const float xx = inner.getX() + ((float) i + 0.5f) * bw + (rng.nextFloat() - 0.5f) * 0.6f;
         const float lean = (rng.nextFloat() - 0.5f) * 1.2f;
         w.startNewSubPath (xx - lean, mid - hh);
@@ -699,7 +706,7 @@ void RiserWaveView::rebuildLayers (float scale)
 void RiserWaveView::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    auto inner = r.reduced (6.0f, 10.0f);
+    auto inner = r.reduced ((float) getWidth() * 0.015f, (float) getHeight() * 0.08f);
     const float mid = inner.getCentreY();
 
     if (! proc.hasRender())
@@ -851,7 +858,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     amountKnob.setMouseCursor (juce::MouseCursor::PointingHandCursor);
     addAndMakeVisible (amountKnob);
     amountAtt = std::make_unique<SliderAtt> (apvts, "amount", amountKnob);
-    amountKnob.onValueChange = [this] { repaint (intensityArea); };
+    amountKnob.onValueChange = [this] { repaint (intensityArea.toFloat().transformedBy (juce::AffineTransform::scale (uiScale)).getSmallestIntegerContainer().expanded (2)); };
 
     addAndMakeVisible (lengthSel);
 
@@ -885,7 +892,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     addChildComponent (stutPopup);
     addMouseListener (this, true);          // per chiudere il menu con un clic fuori
 
-    setSize (460, 652);
+    setSize (juce::roundToInt (logicalW * uiScale), juce::roundToInt (logicalH * uiScale));
     timerCallback();
     startTimerHz (30);
 }
@@ -909,11 +916,12 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
         bgCache = juce::Image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * scale)),
                                juce::jmax (1, juce::roundToInt ((float) getHeight() * scale)), true);
         juce::Graphics bg (bgCache);
-        bg.addTransform (juce::AffineTransform::scale (scale));
+        bg.addTransform (juce::AffineTransform::scale (scale * uiScale));
         paintStatic (bg);
     }
     g.setOpacity (1.0f);
     g.drawImage (bgCache, getLocalBounds().toFloat());
+    g.addTransform (juce::AffineTransform::scale (uiScale));   // da qui in coordinate logiche
 
     // percentuale sotto la pizza
     g.setFont (handFont (26.0f, 0.04f));
@@ -952,7 +960,7 @@ static juce::Path displayPath (juce::Rectangle<float> d, juce::Point<float> c, f
 void VocalRiserAudioProcessorEditor::paintStatic (juce::Graphics& g)
 {
     using namespace juce;
-    const auto b = getLocalBounds().toFloat();
+    const auto b = juce::Rectangle<float> (0.0f, 0.0f, (float) logicalW, (float) logicalH);
     const auto kc = amountKnob.getBounds().toFloat().getCentre();
     const float notchR = (float) amountKnob.getWidth() * 0.5f + 10.0f;
     const auto disp = displayArea.toFloat();
@@ -1122,7 +1130,7 @@ void VocalRiserAudioProcessorEditor::paintStatic (juce::Graphics& g)
 void VocalRiserAudioProcessorEditor::resized()
 {
     bgCache = {};
-    const int W = getWidth();
+    const int W = logicalW;
     const int inset = riserThemeId == 0 ? 20 : 26;
 
     // intestazione: SALVA e RESET a destra
@@ -1133,7 +1141,13 @@ void VocalRiserAudioProcessorEditor::resized()
     displayArea = { inset + 2, 64, W - 2 * inset - 4, 236 };
     const int ks = 196;
     amountKnob.setBounds (W / 2 - ks / 2, displayArea.getBottom() - 78, ks, ks);
-    wave.setBounds (displayArea.getX() + 18, displayArea.getY() + 16, displayArea.getWidth() - 36, 128);
+    // forma d'onda: occupa (in proporzione) lo spazio del display sopra l'incavo della pizza
+    {
+        const int notchTop = amountKnob.getBounds().getCentreY() - (amountKnob.getWidth() / 2 + 10);
+        const int mx = juce::roundToInt ((float) displayArea.getWidth() * 0.035f);
+        const int top = displayArea.getY() + juce::roundToInt ((float) displayArea.getHeight() * 0.05f);
+        wave.setBounds (displayArea.getX() + mx, top, displayArea.getWidth() - 2 * mx, juce::jmax (40, notchTop - 6 - top));
+    }
     const int cy = displayArea.getBottom() - 44;
     captureBtn.setBounds (displayArea.getX() + 8, cy, 104, 38);
     loopBtn.setBounds (displayArea.getRight() - 112, cy, 104, 38);
@@ -1157,6 +1171,11 @@ void VocalRiserAudioProcessorEditor::resized()
     const int chevX = juce::roundToInt ((float) sb.getCentreX() + (13.0f + 8.0f + tw) * 0.5f + 4.0f);
     stutMenuBtn.setBounds (chevX, sb.getY() + 4, 24, 24);
 
+    // tutti i controlli vengono ingranditi insieme al disegno
+    for (auto* c : getChildren())
+        if (dynamic_cast<juce::TooltipWindow*> (c) == nullptr)
+            c->setTransform (juce::AffineTransform::scale (uiScale));
+
     if (stutPopup.isVisible()) showStutterMenu (true);
 }
 
@@ -1165,7 +1184,7 @@ void VocalRiserAudioProcessorEditor::showStutterMenu (bool show)
     if (show)
     {
         const auto sb = fxBtns[1].getBounds();
-        const int x = juce::jlimit (8, getWidth() - StutterPopup::width - 8, sb.getCentreX() - StutterPopup::width / 2);
+        const int x = juce::jlimit (8, logicalW - StutterPopup::width - 8, sb.getCentreX() - StutterPopup::width / 2);
         stutPopup.setTopLeftPosition (x, sb.getY() - StutterPopup::height + 4);
         stutPopup.setArrowX ((float) (sb.getX() + 50 - x));
         stutPopup.toFront (false);
@@ -1179,8 +1198,8 @@ void VocalRiserAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
     if (! stutPopup.isVisible()) return;
     const auto pos = e.getEventRelativeTo (this).getPosition();
-    if (! stutPopup.getBounds().contains (pos) && ! stutMenuBtn.getBounds().contains (pos)
-         && ! fxBtns[1].getBounds().contains (pos))
+    if (! stutPopup.getBoundsInParent().contains (pos) && ! stutMenuBtn.getBoundsInParent().contains (pos)
+         && ! fxBtns[1].getBoundsInParent().contains (pos))
         showStutterMenu (false);
 }
 
@@ -1217,7 +1236,7 @@ void VocalRiserAudioProcessorEditor::timerCallback()
             stereoBtn.setEnabled (true);
             stereoBtn.getProperties().remove ("forceOn");
         }
-        repaint (imageTitleArea);
+        repaint (imageTitleArea.toFloat().transformedBy (juce::AffineTransform::scale (uiScale)).getSmallestIntegerContainer().expanded (2));
     }
     if (src != 1)
     {
