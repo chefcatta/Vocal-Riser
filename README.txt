@@ -4,15 +4,15 @@ Riser vocali in pochi secondi, costruiti sulla prima sillaba della tua frase.
 
 SCARICA
   https://github.com/chefcatta/Vocal-Riser/releases/latest
-  Mac: ChefRiser-mac.zip    Windows: ChefRiser-windows.zip
+  Mac: ChefRiser-mac.pkg    Windows: ChefRiser-windows.zip
 
 
 INSTALLA
 
-  Mac (consigliato) — apri il Terminale, incolla e premi Invio:
-    curl -fsSL https://raw.githubusercontent.com/chefcatta/Vocal-Riser/main/install-mac.sh | bash
-  Chiede la password del Mac. Nessun avviso di sicurezza.
-  Per aggiornare, rilancia la stessa riga.
+  Mac — scarica ChefRiser-mac.pkg e aprilo con un doppio clic.
+  Installa tutto in Macintosh HD > Libreria > Audio > Plug-Ins.
+  Se il Mac lo blocca: Impostazioni di Sistema > Privacy e sicurezza >
+  "Apri comunque", poi riaprilo.
 
   Windows — estrai lo zip e copia "Chef Riser.vst3" in
     C:\Program Files\Common Files\VST3
@@ -39,7 +39,7 @@ USA
 
 
 SE QUALCOSA NON VA
-  Mac dice "non è stata aperta": usa il comando di installazione qui sopra.
+  Mac dice "non è stato aperto": Privacy e sicurezza > "Apri comunque".
   La DAW non lo trova: rifai la scansione dei plugin.
   Il loop non si sente: scegli la tua scheda audio come uscita
   in Impostazioni di Sistema > Suono > Uscita.

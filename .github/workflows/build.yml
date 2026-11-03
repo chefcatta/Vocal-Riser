@@ -32,6 +32,36 @@ jobs:
           codesign --force --deep --sign - "dist/Chef Riser.vst3"
           cd dist && zip -r -y ../ChefRiser-mac.zip .
 
+      - name: Installer .pkg (Mac) - installa in Macintosh HD > Libreria > Audio > Plug-Ins
+        if: runner.os == 'macOS'
+        run: |
+          set -e
+          V=$(sed -n 's/^project(VocalRiser VERSION \([0-9.]*\)).*/\1/p' CMakeLists.txt)
+          R=pkgroot/Library/Audio/Plug-Ins
+          mkdir -p "$R/Components" "$R/VST3"
+          cp -R "dist/Chef Riser.component" "$R/Components/"
+          cp -R "dist/Chef Riser.vst3" "$R/VST3/"
+          # i plugin restano sempre nella cartella di sistema (niente spostamenti dell'installer)
+          pkgbuild --analyze --root pkgroot comp.plist
+          n=$(/usr/libexec/PlistBuddy -c "Print" comp.plist | grep -c "RootRelativeBundlePath" || true)
+          for ((i=0; i<n; i++)); do
+            /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" comp.plist
+            /usr/libexec/PlistBuddy -c "Set :$i:BundleOverwriteAction upgrade" comp.plist
+          done
+          pkgbuild --root pkgroot --component-plist comp.plist --identifier com.chefcatta.chefriser.pkg \
+                   --version "$V" --install-location / --scripts packaging/mac/scripts ChefRiser-core.pkg
+          sed "s/VERSION/$V/" packaging/mac/distribution.xml > dist.xml
+          productbuild --distribution dist.xml --package-path . ChefRiser-mac.pkg
+
+      - name: Prova l'installer (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          set -e
+          sudo installer -pkg ChefRiser-mac.pkg -target /
+          ls -ld "/Library/Audio/Plug-Ins/Components/Chef Riser.component" "/Library/Audio/Plug-Ins/VST3/Chef Riser.vst3"
+          test ! -e "$HOME/Library/Audio/Plug-Ins/Components/Chef Riser.component"
+          auval -v aufx Vrs1 Vrsr | tail -5 || true
+
       - name: Impacchetta (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -40,7 +70,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ChefRiser-${{ runner.os }}
-          path: ChefRiser-*.zip
+          path: |
+            ChefRiser-*.zip
+            ChefRiser-mac.pkg
 
   # Copia i plugin compilati nel branch "plugin" del repository,
   # così si scaricano direttamente da GitHub
@@ -76,7 +108,8 @@ jobs:
             **Chef Riser — CHEF CATTA dsp**
 
             Scarica il file per il tuo computer qui sotto (sezione *Assets*):
-            - **ChefRiser-mac.zip** — Mac (Apple Silicon e Intel): Audio Unit per Logic/GarageBand + VST3 per le altre DAW
+            - **ChefRiser-mac.pkg** — Mac (Apple Silicon e Intel): installer, mette Audio Unit e VST3 in Macintosh HD > Libreria > Audio > Plug-Ins
+            - **ChefRiser-mac.zip** — Mac: gli stessi plugin da copiare a mano
             - **ChefRiser-windows.zip** — Windows 64 bit: VST3
 
             Le istruzioni di installazione per ogni DAW sono nel file **README.txt** qui sotto.
@@ -84,6 +117,7 @@ jobs:
             **Mac, installazione con un comando:** apri il Terminale e incolla
             `curl -fsSL https://raw.githubusercontent.com/chefcatta/Vocal-Riser/main/install-mac.sh | bash`
           files: |
+            out/ChefRiser-mac.pkg
             out/ChefRiser-mac.zip
             out/ChefRiser-windows.zip
             out/README.txt

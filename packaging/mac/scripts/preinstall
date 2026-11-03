@@ -1,0 +1,17 @@
+#!/bin/bash
+# Prima di installare: toglie le versioni vecchie, sia da Macintosh HD > Libreria
+# sia dalla Libreria dell'utente (cosi resta una sola copia, quella di sistema).
+SYS="/Library/Audio/Plug-Ins"
+for n in "Chef Riser" "Vocal Riser"; do
+  rm -rf "$SYS/Components/$n.component" "$SYS/VST3/$n.vst3"
+done
+U="$(stat -f%Su /dev/console 2>/dev/null)"
+if [ -n "$U" ] && [ "$U" != "root" ]; then
+  H="$(dscl . -read "/Users/$U" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+  if [ -n "$H" ] && [ -d "$H/Library/Audio/Plug-Ins" ]; then
+    for n in "Chef Riser" "Vocal Riser"; do
+      rm -rf "$H/Library/Audio/Plug-Ins/Components/$n.component" "$H/Library/Audio/Plug-Ins/VST3/$n.vst3"
+    done
+  fi
+fi
+exit 0

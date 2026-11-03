@@ -1,0 +1,6 @@
+#!/bin/bash
+# Dopo l'installazione: niente quarantena e Logic rilegge subito i plugin
+SYS="/Library/Audio/Plug-Ins"
+xattr -cr "$SYS/Components/Chef Riser.component" "$SYS/VST3/Chef Riser.vst3" 2>/dev/null
+killall -9 AudioComponentRegistrar >/dev/null 2>&1
+exit 0
