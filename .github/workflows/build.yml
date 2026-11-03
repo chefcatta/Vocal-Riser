@@ -51,9 +51,17 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           set -e
+          # simula una vecchia copia nella Libreria dell'utente: deve sparire e il plugin
+          # deve finire solo in Macintosh HD > Libreria
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components" "$HOME/Library/Audio/Plug-Ins/VST3"
+          cp -R "dist/Chef Riser.component" "$HOME/Library/Audio/Plug-Ins/Components/"
+          cp -R "dist/Chef Riser.vst3" "$HOME/Library/Audio/Plug-Ins/VST3/"
           sudo installer -pkg ChefRiser-mac.pkg -target /
           ls -ld "/Library/Audio/Plug-Ins/Components/Chef Riser.component" "/Library/Audio/Plug-Ins/VST3/Chef Riser.vst3"
           test ! -e "$HOME/Library/Audio/Plug-Ins/Components/Chef Riser.component"
+          test ! -e "$HOME/Library/Audio/Plug-Ins/VST3/Chef Riser.vst3"
+          test -f "/Library/Audio/Plug-Ins/Components/Chef Riser.component/Contents/MacOS/Chef Riser"
+          echo "OK: installato solo in /Library/Audio/Plug-Ins"
           auval -v aufx Vrs1 Vrsr | tail -5 || true
 
       - name: Impacchetta (Windows)
