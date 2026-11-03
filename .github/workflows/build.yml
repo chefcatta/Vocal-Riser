@@ -69,12 +69,52 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path "build/VocalRiser_artefacts/Release/VST3/Chef Riser.vst3" -DestinationPath ChefRiser-windows.zip
 
+      - name: Installer .exe (Windows) - installa in C:\Program Files\Common Files\VST3
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $v = (Select-String -Path CMakeLists.txt -Pattern 'project\(VocalRiser VERSION ([0-9.]+)\)').Matches[0].Groups[1].Value
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DMyVersion=$v" "/DSrcDir=$pwd\build\VocalRiser_artefacts\Release\VST3\Chef Riser.vst3" "/O$pwd" packaging\windows\ChefRiser.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC non riuscito" }
+          Get-Item ChefRiser-windows-setup.exe
+
+      - name: Prova l'installer e il plugin (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dst = "C:\Program Files\Common Files\VST3\Chef Riser.vst3"
+          # una vecchia versione gia presente deve essere sostituita
+          New-Item -ItemType Directory -Force "$dst\Contents\vecchio" | Out-Null
+          $p = Start-Process -Wait -PassThru .\ChefRiser-windows-setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          if ($p.ExitCode -ne 0) { throw "installer: codice $($p.ExitCode)" }
+          if (-not (Test-Path "$dst\Contents\x86_64-win\Chef Riser.vst3")) { throw "plugin non installato" }
+          if (Test-Path "$dst\Contents\vecchio") { throw "la vecchia versione non e stata tolta" }
+          Write-Host "OK: installato in $dst"
+          # controllo del plugin con pluginval (Tracktion)
+          Invoke-WebRequest -Uri https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv.zip
+          Expand-Archive pv.zip -DestinationPath pv
+          $pv = Get-ChildItem pv -Recurse -Filter pluginval.exe | Select-Object -First 1
+          $proc = Start-Process -Wait -PassThru -NoNewWindow $pv.FullName -ArgumentList '--strictness-level','5','--skip-gui-tests','--validate-in-process','--output-dir','pvlog','--validate',"`"$dst`""
+          Get-ChildItem pvlog -Recurse -File | ForEach-Object { Get-Content $_.FullName | Select-Object -Last 40 }
+          Write-Host "pluginval: codice $($proc.ExitCode)"
+          if ($proc.ExitCode -ne 0) { throw "pluginval ha trovato problemi" }
+          # disinstallazione pulita
+          $un = Get-ChildItem "${env:ProgramFiles}\Chef Catta\Chef Riser" -Filter "unins*.exe" | Select-Object -First 1
+          Start-Process -Wait $un.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          if (Test-Path $dst) { throw "la disinstallazione non ha tolto il plugin" }
+          Write-Host "OK: disinstallazione pulita"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ChefRiser-${{ runner.os }}
           path: |
             ChefRiser-*.zip
             ChefRiser-mac.pkg
+            ChefRiser-windows-setup.exe
 
   # Copia i plugin compilati nel branch "plugin" del repository,
   # così si scaricano direttamente da GitHub
@@ -112,7 +152,8 @@ jobs:
             Scarica il file per il tuo computer qui sotto (sezione *Assets*):
             - **ChefRiser-mac.pkg** — Mac (Apple Silicon e Intel): installer, mette Audio Unit e VST3 in Macintosh HD > Libreria > Audio > Plug-Ins
             - **ChefRiser-mac.zip** — Mac: gli stessi plugin da copiare a mano
-            - **ChefRiser-windows.zip** — Windows 64 bit: VST3
+            - **ChefRiser-windows-setup.exe** — Windows 64 bit: installer, mette il VST3 in C:\Program Files\Common Files\VST3
+            - **ChefRiser-windows.zip** — Windows: lo stesso VST3 da copiare a mano
 
             Le istruzioni di installazione per ogni DAW sono nel file **README.txt** qui sotto.
 
@@ -121,6 +162,7 @@ jobs:
           files: |
             out/ChefRiser-mac.pkg
             out/ChefRiser-mac.zip
+            out/ChefRiser-windows-setup.exe
             out/ChefRiser-windows.zip
             out/README.txt
 
