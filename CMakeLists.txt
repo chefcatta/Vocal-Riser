@@ -8,7 +8,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 # installare nient'altro (Visual C++ Redistributable)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(VocalRiser VERSION 1.6.0)
+project(VocalRiser VERSION 1.7.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -52,6 +52,15 @@ juce_add_plugin(VocalRiser
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD ${VR_COPY_AFTER_BUILD})
 
+# Font disegnati a mano dell'interfaccia (licenza SIL OFL, vedi Resources/fonts)
+juce_add_binary_data(ChefRiserFonts
+    HEADER_NAME BinaryData.h
+    NAMESPACE BinaryData
+    SOURCES
+        Resources/fonts/PatrickHand-Regular.ttf
+        Resources/fonts/GochiHand-Regular.ttf)
+set_target_properties(ChefRiserFonts PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
 target_sources(VocalRiser PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp)
@@ -64,6 +73,7 @@ target_compile_definitions(VocalRiser PUBLIC
 
 target_link_libraries(VocalRiser
     PRIVATE
+        ChefRiserFonts
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC

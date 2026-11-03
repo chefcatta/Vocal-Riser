@@ -2,6 +2,7 @@
 
 #include "PluginProcessor.h"
 
+// Interfaccia "disegnata a mano", a tema cucina: la manopola dell'intensita e una pizza.
 class RiserLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -12,16 +13,16 @@ public:
     void drawButtonText (juce::Graphics&, juce::TextButton&, bool highlighted, bool down) override;
     void drawLinearSlider (juce::Graphics&, int x, int y, int w, int h, float pos, float minPos, float maxPos,
                            juce::Slider::SliderStyle, juce::Slider&) override;
+    void drawTooltip (juce::Graphics&, const juce::String&, int w, int h) override;
 
 private:
-    juce::Image knobCache;           // corpo della manopola gia disegnato
-    int   knobCacheSide = 0;
-    float knobCacheScale = 0.0f;
+    juce::Image pizzaCache;          // pizza gia disegnata (si ruota e basta)
+    float pizzaCacheRadius = 0.0f, pizzaCacheScale = 0.0f;
 };
 
 //==============================================================================
-// Forma d'onda del riser: da qui lo trascini nella sessione
-class RiserWaveView : public juce::Component
+// Forma d'onda del riser sul tagliere: da qui la trascini nella sessione
+class RiserWaveView : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit RiserWaveView (VocalRiserAudioProcessor& p) : proc (p)
@@ -48,7 +49,7 @@ private:
 };
 
 //==============================================================================
-// Selettore minimale "‹ VALORE ›" legato a un parametro a scelta
+// Selettore "‹ VALORE ›" legato a un parametro a scelta
 class ArrowSelector : public juce::Component
 {
 public:
@@ -67,9 +68,8 @@ private:
 };
 
 //==============================================================================
-// Menu delle opzioni dello stutter: piccolo riquadro con la punta verso STUTTER.
-// E' un normale componente figlio dell'editor (niente finestre modali): si apre con la
-// freccia accanto a STUTTER e si chiude con un clic fuori o di nuovo sulla freccia.
+// Menu delle opzioni dello stutter: un bigliettino con la punta verso STUTTER.
+// E' un normale componente figlio dell'editor (niente finestre modali).
 class StutterPopup : public juce::Component
 {
 public:
@@ -78,7 +78,7 @@ public:
     void resized() override;
     void setArrowX (float x) { arrowX = x; repaint(); }
 
-    static constexpr int width = 168, height = 112, arrowH = 7;
+    static constexpr int width = 176, height = 128, arrowH = 9;
 
 private:
     ArrowSelector timing;
@@ -112,12 +112,12 @@ private:
     float bgScale = 0.0f;
     int lastGeneration = -1;
 
-
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
     VocalRiserAudioProcessor& proc;
     RiserLookAndFeel lnf;
+    juce::TooltipWindow tooltips { this, 600 };
 
     RiserWaveView wave;
     juce::TextButton captureBtn { "CATTURA" }, loopBtn { "LOOP" }, saveBtn { "SALVA" }, resetBtn { "RESET" };
@@ -125,17 +125,15 @@ private:
     juce::Slider amountKnob;
     ArrowSelector lengthSel;
     juce::TextButton stutMenuBtn;                       // freccia che apre il menu dello stutter
-    juce::TextButton stereoBtn { "STEREO" };
+    juce::TextButton stereoBtn { "MONO" };
     std::array<juce::TextButton, 3> fxBtns;
     StutterPopup stutPopup;                              // dichiarato dopo i pulsanti: si costruisce dopo e si distrugge prima
 
     std::unique_ptr<SliderAtt> amountAtt;
     std::vector<std::unique_ptr<ButtonAtt>> buttonAtts;
 
-    juce::Rectangle<int> displayArea, knobArea, intensityArea;
-    juce::Path displayShape;                 // display con l'incavo per la manopola
-    juce::Point<float> knobCentre;
-    float notchRadius = 0.0f;
+    // zone del pannello
+    juce::Rectangle<int> leftPanel, midPanel, rightPanel, boardArea, intensityArea, imageTitleArea;
     bool lastPreviewPlaying = false;
     int lastSourceStereo = -2;
 
