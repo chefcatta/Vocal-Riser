@@ -1,7 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "RiserReverbs.h"
-#include "RiserDsp.h"
 
 namespace
 {
@@ -10,6 +9,48 @@ namespace
     const char* const renderParams[] = { "amount", "length", "filterOn", "stutOn", "phoneOn", "chorusOn",
                                          "revType", "stereoOn", "stutRate", "stutDepth", "pingPong" };
     constexpr float thresholdGain = 0.0056f; // ~ -45 dBFS
+
+    // Trova dove finisce la prima parola: l'inviluppo scende sotto -12 dB
+    // rispetto al picco della parola (o sotto la soglia) per almeno 40 ms.
+    int findFirstWordLength (const juce::AudioBuffer<float>& cap, int capLen, int capCh, double sr)
+    {
+        const int hop      = juce::jmax (1, (int) (0.005 * sr));
+        const int win      = hop * 2;
+        const int minWord  = (int) (0.08 * sr);
+        const int maxWord  = juce::jmin (capLen, (int) (1.2 * sr));
+        const int dipHold  = (int) (0.04 * sr);
+        const int release  = (int) (0.02 * sr);
+
+        float peak = 0.0f;
+        int dipStart = -1;
+
+        for (int pos = 0; pos + win <= capLen; pos += hop)
+        {
+            double sum = 0.0;
+            for (int ch = 0; ch < capCh; ++ch)
+            {
+                const float* d = cap.getReadPointer (ch, pos);
+                for (int i = 0; i < win; ++i) sum += (double) d[i] * d[i];
+            }
+            const float env = (float) std::sqrt (sum / (double) (win * capCh));
+            peak = juce::jmax (peak, env);
+
+            const bool dip = pos > minWord && (env < peak * 0.25f || env < thresholdGain * 0.5f);
+            if (dip)
+            {
+                if (dipStart < 0) dipStart = pos;
+                if (pos - dipStart >= dipHold)
+                    return juce::jmin (capLen, dipStart + release);
+            }
+            else
+            {
+                dipStart = -1;
+            }
+
+            if (pos >= maxWord) break;
+        }
+        return juce::jmax (1, maxWord); // nota lunga senza pause: tieni al massimo 1,2 s
+    }
 }
 
 //==============================================================================
@@ -482,20 +523,11 @@ void VocalRiserAudioProcessor::renderRiser()
     const double secPerBeat = 60.0 / bpm;
     const int    Ls         = jmax (256, (int) std::round (beatsTable[lenIdx] * secPerBeat * rate));
 
-    // 1) PRIMA SILLABA della prima parola (respiri e rumori prima della voce vengono saltati)
-    const auto syl = RiserDsp::findFirstSyllable (cap, capLen, capCh, rate);
-    const int  seg = jmax (64, syl.end - syl.start);
-    AudioBuffer<float> sylBuf (2, seg);
-    for (int ch = 0; ch < 2; ++ch)
-        sylBuf.copyFrom (ch, 0, cap, jmin (ch, capCh - 1), syl.start, jmin (seg, capLen - syl.start));
-    {
-        const int fin = jmin (seg / 4, (int) (0.004 * rate)), fout = jmin (seg / 3, (int) (0.025 * rate));
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            sylBuf.applyGainRamp (ch, 0, fin, 0.0f, 1.0f);
-            sylBuf.applyGainRamp (ch, seg - fout, fout, 1.0f, 0.0f);
-        }
-    }
+    // 1) ALGORITMO DELLA PRIMA VERSIONE: la prima parte della prima parola (l'attacco),
+    //    cioe il 40% della parola, tra 80 e 250 ms
+    const int wordLen   = findFirstWordLength (cap, capLen, capCh, rate);
+    const int attackLen = jlimit ((int) (0.08 * rate), (int) (0.25 * rate), (int) (wordLen * 0.4));
+    const int seg       = jmax (1, jmin (wordLen, attackLen, Ls));
 
     // Sorgente stereo o mono? (una traccia stereo con L = R conta come mono)
     bool srcStereo = false;
@@ -525,90 +557,57 @@ void VocalRiserAudioProcessor::renderRiser()
         if (mag > 1.0e-6f) b.applyGain (targetPeak / mag);
     };
 
-    // Sillaba rovesciata: la fine del riser coincide con l'attacco della sillaba (e della voce)
+    // Inizio della frase, rovesciato
     AudioBuffer<float> rev (2, seg);
     for (int ch = 0; ch < 2; ++ch)
     {
-        const float* src = sylBuf.getReadPointer (ch);
+        const float* src = cap.getReadPointer (jmin (ch, capCh - 1));
         float* dst = rev.getWritePointer (ch);
         for (int j = 0; j < seg; ++j) dst[j] = src[seg - 1 - j];
     }
+    // la fine della parola (ora all'inizio) entra morbida
+    const int wordFade = jmin (seg / 3, (int) (0.02 * rate));
+    for (int ch = 0; ch < 2; ++ch) rev.applyGainRamp (ch, 0, wordFade, 0.0f, 1.0f);
 
-    // 2) CORPO: la sillaba rovesciata e allungata su tutta la durata del riser,
-    //    con un velo di riverbero. E' la parte che "suona" come la voce.
-    // Allungamento spettrale: il timbro della sillaba resta, sparisce l'effetto "metallico" dei grani ripetuti
-    AudioBuffer<float> body;
-    RiserDsp::spectralStretch (rev, seg, body, Ls, rate, image == RiserReverbs::monoToStereo);
-    {
-        AudioBuffer<float> veil;
-        veil.makeCopyOf (body);
-        RiserReverbs::apply (veil, Ls, revType, image, amount * 0.6f, rate);
-        normalise (body, 0.5f);
-        normalise (veil, 0.5f);
-        for (int ch = 0; ch < 2; ++ch) body.addFrom (ch, 0, veil, ch, 0, Ls, 0.45f);
-    }
-
-    // 3) CODA: riverbero (con eco a tempo, scura e leggera) della sillaba, rovesciato.
-    //    La coda NON viene allungata: e lunga quanto il riverbero vero (al massimo quanto il riser),
-    //    cosi suona naturale e non metallica.
-    const int tailLen = jmin (Ls, (int) (8.0 * rate));
-    const int search  = (int) (0.4 * rate);
-    const int total   = seg + search + tailLen;
+    // 2) Eco a tempo + riverbero (solo wet) sulla voce rovesciata. Niente allungamenti:
+    //    la coda e quella vera del riverbero.
+    const int total = seg + Ls;
     AudioBuffer<float> wet (2, total);
     wet.clear();
     for (int ch = 0; ch < 2; ++ch) wet.copyFrom (ch, 0, rev, ch, 0, seg);
-    {
-        const int   dly = jmax (1, (int) (0.75 * secPerBeat * rate));
-        const float fb  = 0.22f + 0.18f * amount;
-        RiserReverbs::OnePole dark[2];
-        for (auto& d : dark) d.setLowpass (3500.0f, rate);
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            float* w = wet.getWritePointer (ch);
-            const int offset = (ch == 1 && image == RiserReverbs::monoToStereo) ? dly + dly / 3 : dly;
-            for (int j = offset; j < total; ++j) w[j] += fb * dark[ch].lp (w[j - offset]);   // ripetizioni sempre piu scure
-        }
-    }
-    RiserReverbs::apply (wet, total, revType, image, amount, rate, (double) tailLen / rate);
 
-    int tailStart = seg;
+    const int   dly = jmax (1, (int) (0.75 * secPerBeat * rate));
+    const float fb  = 0.30f + 0.30f * amount;
+    for (int ch = 0; ch < 2; ++ch)
     {
-        const int win = (int) (0.02 * rate);
-        double best = -1.0;
-        for (int pos = seg; pos + win <= seg + search; pos += win / 2)
-        {
-            double e = 0.0;
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                const float* w = wet.getReadPointer (ch, pos);
-                for (int i = 0; i < win; ++i) e += (double) w[i] * w[i];
-            }
-            if (e > best) { best = e; tailStart = pos; }
-        }
+        float* w = wet.getWritePointer (ch);
+        const int offset = ch == 0 ? dly : dly + dly / 3; // leggero ping-pong
+        for (int j = offset; j < total; ++j) w[j] += fb * w[j - offset];
     }
-    AudioBuffer<float> tail (2, tailLen);
+
+    // Riverbero della prima versione. HALL e esattamente quello originale;
+    // PLATE e un po' piu piccolo e brillante, SPACE un po' piu grande e scuro.
+    Reverb rv;
+    rv.setSampleRate (rate);
+    Reverb::Parameters rp;
+    const float sizeOffset = revType == RiserReverbs::plate ? -0.06f : revType == RiserReverbs::space ? 0.02f : 0.0f;
+    rp.roomSize   = jlimit (0.0f, 0.985f, 0.80f + 0.16f * amount + (lenIdx >= 2 ? 0.04f * (float) (lenIdx - 1) : 0.0f) + sizeOffset);
+    rp.damping    = revType == RiserReverbs::plate ? 0.2f : revType == RiserReverbs::space ? 0.5f : 0.35f;
+    rp.wetLevel   = 0.33f;
+    rp.dryLevel   = 0.0f;
+    rp.width      = 1.0f;
+    rp.freezeMode = 0.0f;
+    rv.setParameters (rp);
+    for (int pos = 0; pos < total; pos += 512)
+        rv.processStereo (wet.getWritePointer (0) + pos, wet.getWritePointer (1) + pos, jmin (512, total - pos));
+
+    // 3) Coda rovesciata: il riser finisce esattamente dove parte la voce
+    AudioBuffer<float> out (2, Ls);
     for (int ch = 0; ch < 2; ++ch)
     {
         const float* w = wet.getReadPointer (ch);
-        float* t = tail.getWritePointer (ch);
-        for (int j = 0; j < tailLen; ++j) t[j] = w[tailStart + tailLen - 1 - j];
-    }
-    // la coda finisce dove finisce il riser (sull'attacco della voce)
-    AudioBuffer<float> tailOut (2, Ls);
-    tailOut.clear();
-    for (int ch = 0; ch < 2; ++ch) tailOut.copyFrom (ch, Ls - tailLen, tail, ch, 0, tailLen);
-
-    // 4) MIX: piu INTENSITA = piu ambiente
-    AudioBuffer<float> out;
-    out.makeCopyOf (body);
-    normalise (out, 0.5f);
-    normalise (tailOut, 0.5f);
-    {
-        // la coda di riverbero vera (non allungata) guida il riser; la sillaba allungata e un letto sotto
-        const float bodyGain = 0.70f - 0.30f * amount;
-        const float tailGain = 0.55f + 0.45f * amount;
-        out.applyGain (bodyGain);
-        for (int ch = 0; ch < 2; ++ch) out.addFrom (ch, 0, tailOut, ch, 0, Ls, tailGain);
+        float* o = out.getWritePointer (ch);
+        for (int j = 0; j < Ls; ++j) o[j] = w[seg + Ls - 1 - j];
     }
     normalise (out, 0.5f);
 
