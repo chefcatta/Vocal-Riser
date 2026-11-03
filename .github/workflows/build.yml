@@ -41,14 +41,8 @@ jobs:
           mkdir -p "$R/Components" "$R/VST3"
           cp -R "dist/Chef Riser.component" "$R/Components/"
           cp -R "dist/Chef Riser.vst3" "$R/VST3/"
-          # i plugin restano sempre nella cartella di sistema (niente spostamenti dell'installer)
-          pkgbuild --analyze --root pkgroot comp.plist
-          n=$(/usr/libexec/PlistBuddy -c "Print" comp.plist | grep -c "RootRelativeBundlePath" || true)
-          for ((i=0; i<n; i++)); do
-            /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" comp.plist
-            /usr/libexec/PlistBuddy -c "Set :$i:BundleOverwriteAction upgrade" comp.plist
-          done
-          pkgbuild --root pkgroot --component-plist comp.plist --identifier com.chefcatta.chefriser.pkg \
+          plutil -lint packaging/mac/components.plist
+          pkgbuild --root pkgroot --component-plist packaging/mac/components.plist --identifier com.chefcatta.chefriser.pkg \
                    --version "$V" --install-location / --scripts packaging/mac/scripts ChefRiser-core.pkg
           sed "s/VERSION/$V/" packaging/mac/distribution.xml > dist.xml
           productbuild --distribution dist.xml --package-path . ChefRiser-mac.pkg
