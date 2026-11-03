@@ -123,10 +123,10 @@ private:
     juce::TextButton captureBtn { "CATTURA" }, loopBtn { "LOOP" }, saveBtn { "SALVA" }, resetBtn { "RESET" };
 
     juce::Slider amountKnob;
-    ArrowSelector lengthSel, reverbSel;
+    ArrowSelector lengthSel;
     juce::TextButton stutMenuBtn;                       // freccia che apre il menu dello stutter
     juce::TextButton stereoBtn { "STEREO" };
-    std::array<juce::TextButton, 4> fxBtns;
+    std::array<juce::TextButton, 3> fxBtns;
     StutterPopup stutPopup;                              // dichiarato dopo i pulsanti: si costruisce dopo e si distrugge prima
 
     std::unique_ptr<SliderAtt> amountAtt;

@@ -125,8 +125,8 @@ private:
 
     std::atomic<float>* pAmount = nullptr;  std::atomic<float>* pLength = nullptr;
     std::atomic<float>* pFilterOn = nullptr; std::atomic<float>* pStutOn = nullptr;
-    std::atomic<float>* pPhoneOn = nullptr;  std::atomic<float>* pChorusOn = nullptr;
-    std::atomic<float>* pRevType = nullptr;  std::atomic<float>* pStereoOn = nullptr;
+    std::atomic<float>* pPhoneOn = nullptr;
+    std::atomic<float>* pStereoOn = nullptr;
     std::atomic<float>* pStutRate = nullptr; std::atomic<float>* pStutDepth = nullptr;
     std::atomic<float>* pPingPong = nullptr;
 

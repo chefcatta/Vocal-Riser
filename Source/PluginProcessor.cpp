@@ -6,8 +6,8 @@ namespace
 {
     const double      beatsTable[]  = { 1.0, 2.0, 4.0, 8.0 };            // 1/4, 1/2, 1, 2 battute (4/4)
     const char* const lengthNames[] = { "1-4bar", "1-2bar", "1bar", "2bar" };
-    const char* const renderParams[] = { "amount", "length", "filterOn", "stutOn", "phoneOn", "chorusOn",
-                                         "revType", "stereoOn", "stutRate", "stutDepth", "pingPong" };
+    const char* const renderParams[] = { "amount", "length", "filterOn", "stutOn", "phoneOn",
+                                         "stereoOn", "stutRate", "stutDepth", "pingPong" };
     constexpr float thresholdGain = 0.0056f; // ~ -45 dBFS
 
     // Trova dove finisce la prima parola: l'inviluppo scende sotto -12 dB
@@ -90,8 +90,6 @@ VocalRiserAudioProcessor::VocalRiserAudioProcessor()
     pFilterOn = apvts.getRawParameterValue ("filterOn");
     pStutOn   = apvts.getRawParameterValue ("stutOn");
     pPhoneOn  = apvts.getRawParameterValue ("phoneOn");
-    pChorusOn = apvts.getRawParameterValue ("chorusOn");
-    pRevType  = apvts.getRawParameterValue ("revType");
     pStereoOn = apvts.getRawParameterValue ("stereoOn");
     pStutRate = apvts.getRawParameterValue ("stutRate");
     pStutDepth = apvts.getRawParameterValue ("stutDepth");
@@ -130,9 +128,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout VocalRiserAudioProcessor::cr
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "filterOn", 1 }, "Filtro",  true));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stutOn", 1 },   "Stutter", true));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "phoneOn", 1 },  "Phone",   false));
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "chorusOn", 1 }, "Chorus",  false));
-    p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "revType", 1 }, "Ambiente",
-                                                         StringArray { "Hall", "Plate", "Space" }, 0));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stereoOn", 1 }, "Mono -> Stereo", false));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "stutRate", 1 }, "Timing Stutter",
                                                          StringArray { "1/4", "1/8", "1/16" }, 2));
@@ -302,7 +297,7 @@ void VocalRiserAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
         if (lock.isLocked() && previewBuf != nullptr && previewBuf->getNumSamples() > 0)
         {
             const int len = previewBuf->getNumSamples();
-            const int gap = (int) (60.0 / bpm * sr);          // un beat di pausa tra una ripetizione e l'altra
+            const int gap = 0;                                  // loop continuo, senza pausa in fondo
             const int cycle = len + gap;
 
             int pos = previewPos.load (std::memory_order_relaxed);
@@ -549,7 +544,6 @@ void VocalRiserAudioProcessor::renderRiser()
     const auto image = srcStereo                               ? RiserReverbs::keepStereo
                      : (pStereoOn->load() > 0.5f || pingPong)  ? RiserReverbs::monoToStereo
                                                                : RiserReverbs::monoOut;
-    const auto revType = (RiserReverbs::Type) jlimit (0, 2, (int) pRevType->load());
 
     auto normalise = [] (AudioBuffer<float>& b, float targetPeak)
     {
@@ -585,14 +579,12 @@ void VocalRiserAudioProcessor::renderRiser()
         for (int j = offset; j < total; ++j) w[j] += fb * w[j - offset];
     }
 
-    // Riverbero della prima versione. HALL e esattamente quello originale;
-    // PLATE e un po' piu piccolo e brillante, SPACE un po' piu grande e scuro.
+    // Riverbero della prima versione
     Reverb rv;
     rv.setSampleRate (rate);
     Reverb::Parameters rp;
-    const float sizeOffset = revType == RiserReverbs::plate ? -0.06f : revType == RiserReverbs::space ? 0.02f : 0.0f;
-    rp.roomSize   = jlimit (0.0f, 0.985f, 0.80f + 0.16f * amount + (lenIdx >= 2 ? 0.04f * (float) (lenIdx - 1) : 0.0f) + sizeOffset);
-    rp.damping    = revType == RiserReverbs::plate ? 0.2f : revType == RiserReverbs::space ? 0.5f : 0.35f;
+    rp.roomSize   = jlimit (0.0f, 0.985f, 0.80f + 0.16f * amount + (lenIdx >= 2 ? 0.04f * (float) (lenIdx - 1) : 0.0f));
+    rp.damping    = 0.35f;
     rp.wetLevel   = 0.33f;
     rp.dryLevel   = 0.0f;
     rp.width      = 1.0f;
@@ -666,23 +658,6 @@ void VocalRiserAudioProcessor::renderRiser()
         }
     }
 
-    if (pChorusOn->load() > 0.5f)
-    {
-        dsp::Chorus<float> chorus;
-        chorus.prepare (spec);
-        chorus.setRate (0.8f);
-        chorus.setDepth (0.35f);
-        chorus.setCentreDelay (9.0f);
-        chorus.setFeedback (0.1f);
-        chorus.setMix (0.5f);
-        for (int pos = 0; pos < Ls; pos += 512)
-        {
-            dsp::AudioBlock<float> blk (out);
-            auto sub = blk.getSubBlock ((size_t) pos, (size_t) jmin (512, Ls - pos));
-            chorus.process (dsp::ProcessContextReplacing<float> (sub));
-        }
-    }
-
     if (image == RiserReverbs::monoOut)
         out.copyFrom (1, 0, out, 0, 0, Ls);   // uscita mono: L e R identici
 
@@ -713,7 +688,7 @@ void VocalRiserAudioProcessor::renderRiser()
     if (captureEpoch.load() != epoch)
         return;
     previewSr.store (rate);
-    previewGap.store ((int) (secPerBeat * rate));
+    previewGap.store (0);                     // loop continuo, senza pausa
     {
         const ScopedLock sl (resultLock);
         rendered     = std::make_shared<const AudioBuffer<float>> (out);

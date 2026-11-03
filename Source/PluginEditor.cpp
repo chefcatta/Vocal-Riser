@@ -601,7 +601,6 @@ static void drawDotCorner (juce::Graphics& g, juce::Point<float> corner, float d
 VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioProcessor& p)
     : AudioProcessorEditor (&p), proc (p), wave (p),
       lengthSel (*p.apvts.getParameter ("length"), "DURATA", { "1/4 BAR", "1/2 BAR", "1 BAR", "2 BAR" }),
-      reverbSel (*p.apvts.getParameter ("revType"), "AMBIENTE", { "HALL", "PLATE", "SPACE" }),
       stutPopup (p)
 {
     setLookAndFeel (&lnf);
@@ -650,7 +649,6 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
 
     // Selettori
     addAndMakeVisible (lengthSel);
-    addAndMakeVisible (reverbSel);
     // Freccia accanto a STUTTER: apre il menu con TIMING, QUANTITA e PING PONG
     stutMenuBtn.getProperties().set ("icon", "chevron");
     stutMenuBtn.setTooltip ("Opzioni dello stutter");
@@ -666,9 +664,9 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     buttonAtts.push_back (std::make_unique<ButtonAtt> (apvts, "stereoOn", stereoBtn));
 
     // Effetti
-    const char* fxNames[] = { "FILTRO", "STUTTER", "PHONE", "CHORUS" };
-    const char* fxIds[]   = { "filterOn", "stutOn", "phoneOn", "chorusOn" };
-    for (int i = 0; i < 4; ++i)
+    const char* fxNames[] = { "FILTRO", "STUTTER", "PHONE" };
+    const char* fxIds[]   = { "filterOn", "stutOn", "phoneOn" };
+    for (int i = 0; i < 3; ++i)
     {
         auto& b = fxBtns[(size_t) i];
         b.setButtonText (fxNames[i]);
@@ -885,14 +883,15 @@ void VocalRiserAudioProcessorEditor::resized()
     int y = intensityArea.getBottom() + 18;
     auto sel = juce::Rectangle<int> (shell.getX() + 18, y, shell.getWidth() - 36, 40);
     sel = sel.reduced (20, 0);
-    const int sw = sel.getWidth() / 3;
+    sel = sel.reduced (30, 0);
+    const int sw = sel.getWidth() / 2;
     lengthSel.setBounds (sel.removeFromLeft (sw).reduced (4, 0));
-    stereoBtn.setBounds (sel.removeFromLeft (sw).reduced (4, 0).withTrimmedTop (12));
-    reverbSel.setBounds (sel.reduced (4, 0));
+    stereoBtn.setBounds (sel.reduced (4, 0).withTrimmedTop (12));
 
     y += 40 + 18;
     auto fx = juce::Rectangle<int> (shell.getX() + 30, y, shell.getWidth() - 60, 32);
-    const int fw = fx.getWidth() / 4;
+    fx = fx.reduced (30, 0);
+    const int fw = fx.getWidth() / (int) fxBtns.size();
     for (auto& b : fxBtns) b.setBounds (fx.removeFromLeft (fw));
 
     // la freccia sta subito a destra della scritta STUTTER

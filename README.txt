@@ -27,7 +27,7 @@ INSTALLA
 USA
   1. Metti Chef Riser sulla traccia della voce.
   2. Premi CATTURA, poi play sulla frase.
-  3. Regola INTENSITÀ, DURATA, AMBIENTE e gli effetti.
+  3. Regola INTENSITÀ, DURATA, IMMAGINE e gli effetti.
   4. Accendi LOOP e ferma la DAW: il riser suona in loop
      dall'uscita audio del Mac. Quando premi play si zittisce.
   5. Trascina la forma d'onda nella timeline: finisce dove attacca la voce.
