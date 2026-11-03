@@ -5,18 +5,44 @@
 // Palette "cucina": carta, inchiostro e ingredienti
 namespace Ink
 {
-    const juce::Colour ink      { 0xff2a2320 };   // inchiostro (contorni e testi)
-    const juce::Colour paper    { 0xfff4ead5 };   // fondo
-    const juce::Colour cream    { 0xfffbf5e6 };   // targhette e pulsanti
-    const juce::Colour mint     { 0xffcfe3d2 };   // pannello della frase
-    const juce::Colour navy     { 0xff2f3a64 };   // pannello della pizza (forno)
-    const juce::Colour butter   { 0xfff2db8e };   // pannello della ricetta
-    const juce::Colour tomato   { 0xffd9452b };
-    const juce::Colour basil    { 0xff4f8a3c };
-    const juce::Colour wood     { 0xffe0b47c };
-    const juce::Colour woodDark { 0xffbf8f55 };
-    const juce::Colour crust    { 0xffe3a457 };
-    const juce::Colour cheese   { 0xfffff0c4 };
+    juce::Colour ink      { 0xff2a2320 };   // inchiostro (contorni e testi)
+    juce::Colour paper    { 0xfff4ead5 };   // fondo
+    juce::Colour cream    { 0xfffbf5e6 };   // targhette e pulsanti
+    juce::Colour btnText  { 0xff2a2320 };   // testo dei pulsanti spenti
+    juce::Colour mint     { 0xffcfe3d2 };
+    juce::Colour navy     { 0xff2f3a64 };
+    juce::Colour butter   { 0xfff2db8e };
+    juce::Colour tomato   { 0xffd9452b };
+    juce::Colour basil    { 0xff4f8a3c };
+    juce::Colour wood     { 0xffe0b47c };
+    juce::Colour woodDark { 0xffbf8f55 };
+    juce::Colour crust    { 0xffe3a457 };
+    juce::Colour cheese   { 0xfff0e2b6 };
+    juce::Colour onText   { 0xfffbf5e6 };   // testo dei pulsanti accesi
+    juce::Colour wave     { 0xff2a2320 };   // forma d'onda
+}
+
+// Varianti grafiche (per scegliere lo stile): 0 quaderno, 1 lavagna, 2 tovaglia
+int riserThemeId = 2;   // scelta: tovaglia a quadri
+
+static void applyTheme (int id)
+{
+    using juce::Colour;
+    if (id == 1)        // LAVAGNA: gesso su ardesia, cornice di legno
+    {
+        Ink::ink = Colour (0xffeeeae0); Ink::paper = Colour (0xff2e3a33); Ink::cream = Colour (0xff36443c);
+        Ink::btnText = Colour (0xffeeeae0); Ink::onText = Colour (0xfffbf5e6); Ink::wave = Ink::ink;
+    }
+    else if (id == 2)   // TOVAGLIA: quadretti rossi e menu di carta
+    {
+        Ink::ink = Colour (0xff2a2320); Ink::paper = Colour (0xfffaf3e2); Ink::cream = Colour (0xfffffaee);
+        Ink::btnText = Colour (0xff2a2320); Ink::onText = Colour (0xfffbf5e6); Ink::wave = Colour (0xfffbf5e6);
+    }
+    else                // QUADERNO DI RICETTE
+    {
+        Ink::ink = Colour (0xff2a2320); Ink::paper = Colour (0xfff4ead5); Ink::cream = Colour (0xfffbf5e6);
+        Ink::btnText = Colour (0xff2a2320); Ink::onText = Colour (0xfffbf5e6); Ink::wave = Ink::ink;
+    }
 }
 
 namespace
@@ -104,7 +130,7 @@ namespace
     }
 
     // viti del pannello: cerchietto con il taglio
-    void screw (juce::Graphics& g, juce::Point<float> c, int seed)
+    [[maybe_unused]] void screw (juce::Graphics& g, juce::Point<float> c, int seed)
     {
         const float r = 4.2f;
         g.setColour (Ink::cream);
@@ -274,7 +300,7 @@ namespace
         const auto pieW = wobble (pie, 0.9f, 31, true, 4.0f);
 
         // ombra sul piatto
-        g.setColour (Ink::ink.withAlpha (0.3f));
+        g.setColour (juce::Colours::black.withAlpha (0.3f));
         g.fillPath (pieW, AffineTransform::translation (3.0f, 5.0f));
 
         {
@@ -407,14 +433,14 @@ void RiserLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
         const float r = lit ? 3.4f : 2.6f;
         if (lit)
         {
-            g.setColour (Ink::butter);
+            g.setColour (Ink::tomato);
             g.fillEllipse (p.x - r, p.y - r, r * 2, r * 2);
             g.setColour (Ink::ink);
             g.drawEllipse (p.x - r, p.y - r, r * 2, r * 2, 1.0f);
         }
         else
         {
-            g.setColour (Ink::cream.withAlpha (0.45f));
+            g.setColour (Ink::ink.withAlpha (0.4f));
             g.drawEllipse (p.x - r, p.y - r, r * 2, r * 2, 1.2f);
         }
     }
@@ -443,7 +469,7 @@ void RiserLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w,
     if (s.isMouseOverOrDragging())
     {
         Path ring; ring.addEllipse (c.x - R - 4.0f, c.y - R - 4.0f, (R + 4.0f) * 2, (R + 4.0f) * 2);
-        g.setColour (Ink::cream.withAlpha (0.35f));
+        g.setColour (Ink::ink.withAlpha (0.35f));
         g.strokePath (wobble (ring, 0.8f, 5), PathStrokeType (1.5f));
     }
 }
@@ -477,9 +503,12 @@ void RiserLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, b
 
     if (style == "row")
     {
-        // spia rotonda (pomodoro quando e acceso), scritta, icona a destra
+        // spia rotonda (pomodoro quando e acceso) e scritta, centrate nella colonna
         const float d = 13.0f;
-        auto led = juce::Rectangle<float> (r.getX() + 4.0f, r.getCentreY() - d * 0.5f, d, d);
+        g.setFont (handFont (19.0f, 0.06f));
+        const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), b.getButtonText());
+        const float x0 = r.getCentreX() - (d + 8.0f + tw) * 0.5f;
+        auto led = juce::Rectangle<float> (x0, r.getCentreY() - d * 0.5f, d, d);
         juce::Path lp; lp.addEllipse (led);
         g.setColour (on ? Ink::tomato : Ink::cream);
         g.fillPath (lp);
@@ -489,14 +518,8 @@ void RiserLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, b
             g.fillEllipse (led.getX() + 3.0f, led.getY() + 2.5f, 3.5f, 2.5f);
         }
         sketch (g, lp, 7, 1.5f);
-
-        g.setFont (handFont (19.0f, 0.06f));
-        auto tr = r.withTrimmedLeft (d + 12.0f);
-        handText (g, b.getButtonText(), tr, juce::Justification::centredLeft, Ink::ink.withMultipliedAlpha (highlighted ? 1.0f : 0.88f));
-
-        const auto icon = b.getProperties()["icon"].toString();
-        if (icon.isNotEmpty())
-            drawIcon (g, icon, { r.getRight() - 24.0f, r.getCentreY() - 8.0f, 18.0f, 16.0f }, Ink::ink.withAlpha (0.8f));
+        handText (g, b.getButtonText(), { x0 + d + 8.0f, r.getY(), tw + 4.0f, r.getHeight() }, juce::Justification::centredLeft,
+                  Ink::ink.withMultipliedAlpha (highlighted ? 1.0f : 0.88f));
         return;
     }
 
@@ -509,7 +532,7 @@ void RiserLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b, b
         return;
     }
 
-    const juce::Colour col = (on ? Ink::cream : Ink::ink).withMultipliedAlpha (alpha);
+    const juce::Colour col = (on ? Ink::onText : Ink::btnText).withMultipliedAlpha (alpha);
     const auto icon = b.getProperties()["icon"].toString();
     if (style == "icon")
     {
@@ -561,7 +584,7 @@ void RiserLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w,
 
 //==============================================================================
 StutterPopup::StutterPopup (VocalRiserAudioProcessor& p)
-    : timing (*p.apvts.getParameter ("stutRate"), "TIMING", { "1/4", "1/8", "1/16" })
+    : timing (*p.apvts.getParameter ("stutRate"), "TIMING", { "1/4", "1/8", "1/16", "1/32" })
 {
     addAndMakeVisible (timing);
 
@@ -667,8 +690,8 @@ void RiserWaveView::rebuildLayers (float scale)
         lg.setColour (c);
         lg.strokePath (w, st);
     };
-    paintLayer (normalImg, Ink::ink.withAlpha (0.85f));
-    paintLayer (dimImg,    Ink::ink.withAlpha (0.25f));
+    paintLayer (normalImg, Ink::wave.withAlpha (0.88f));
+    paintLayer (dimImg,    Ink::wave.withAlpha (0.28f));
     paintLayer (litImg,    Ink::tomato);
     paintLayer (hotImg,    Ink::tomato.darker (0.35f));
 }
@@ -682,7 +705,7 @@ void RiserWaveView::paint (juce::Graphics& g)
     if (! proc.hasRender())
     {
         // tagliere vuoto: una linea tratteggiata a matita
-        g.setColour (Ink::ink.withAlpha (0.3f));
+        g.setColour (Ink::wave.withAlpha (0.35f));
         for (float xx = inner.getX(); xx < inner.getRight(); xx += 7.0f)
             g.fillRoundedRectangle (xx, mid - 0.8f, 4.0f, 1.6f, 0.8f);
         return;
@@ -717,7 +740,7 @@ void RiserWaveView::paint (juce::Graphics& g)
     juce::Path head;
     head.startNewSubPath (px, inner.getY() - 4.0f);
     head.lineTo (px + 0.5f, inner.getBottom() + 4.0f);
-    g.setColour (Ink::ink);
+    g.setColour (Ink::wave);
     g.strokePath (head, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.setColour (Ink::tomato);
     g.fillEllipse (px - 4.5f, inner.getY() - 9.0f, 9.0f, 9.0f);
@@ -782,6 +805,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
       lengthSel (*p.apvts.getParameter ("length"), "DURATA", { "1/4 BAR", "1/2 BAR", "1 BAR", "2 BAR" }),
       stutPopup (p)
 {
+    applyTheme (riserThemeId);
     setLookAndFeel (&lnf);
     auto& apvts = proc.apvts;
 
@@ -793,7 +817,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     loopBtn.getProperties().set ("style", "loop");
     saveBtn.getProperties().set ("icon", "save");
     resetBtn.getProperties().set ("icon", "reset");
-    for (auto* b : { &saveBtn, &resetBtn }) b->getProperties().set ("size", 16.0f);
+    for (auto* b : { &saveBtn, &resetBtn, &captureBtn, &loopBtn }) b->getProperties().set ("size", 17.0f);
 
     captureBtn.setTooltip ("Premi CATTURA, poi play: il plugin ascolta la prossima frase");
     captureBtn.onClick = [this] { proc.armCapture(); };
@@ -836,16 +860,14 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     addAndMakeVisible (stereoBtn);
     buttonAtts.push_back (std::make_unique<ButtonAtt> (apvts, "stereoOn", stereoBtn));
 
-    // Effetti: righe con la spia
+    // Effetti: spia + scritta, in fila
     const char* fxNames[] = { "FILTRO", "STUTTER", "PHONE" };
     const char* fxIds[]   = { "filterOn", "stutOn", "phoneOn" };
-    const char* fxIcons[] = { "colander", "", "phone" };
     for (int i = 0; i < 3; ++i)
     {
         auto& b = fxBtns[(size_t) i];
         b.setButtonText (fxNames[i]);
         b.getProperties().set ("style", "row");
-        b.getProperties().set ("icon", fxIcons[i]);
         b.setClickingTogglesState (true);
         b.setMouseCursor (juce::MouseCursor::PointingHandCursor);
         addAndMakeVisible (b);
@@ -863,7 +885,7 @@ VocalRiserAudioProcessorEditor::VocalRiserAudioProcessorEditor (VocalRiserAudioP
     addChildComponent (stutPopup);
     addMouseListener (this, true);          // per chiudere il menu con un clic fuori
 
-    setSize (720, 408);
+    setSize (460, 652);
     timerCallback();
     startTimerHz (30);
 }
@@ -878,7 +900,7 @@ VocalRiserAudioProcessorEditor::~VocalRiserAudioProcessorEditor()
 //==============================================================================
 void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // Sfondo statico (pannelli, tagliere, scritte): disegnato una volta e riusato
+    // Sfondo statico: disegnato una volta e riusato
     const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
     if (bgCache.isNull() || std::abs (bgScale - scale) > 0.01f
          || bgCache.getWidth() != juce::roundToInt ((float) getWidth() * scale))
@@ -896,7 +918,7 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
     // percentuale sotto la pizza
     g.setFont (handFont (26.0f, 0.04f));
     handText (g, juce::String (juce::roundToInt (amountKnob.getValue() * 100.0)) + " %",
-              intensityArea.toFloat(), juce::Justification::centred, Ink::cream);
+              intensityArea.toFloat().withTrimmedTop (16.0f), juce::Justification::centred);
 
     // titolo di IMMAGINE (cambia se la voce e gia stereo)
     g.setFont (handFont (15.0f, 0.08f));
@@ -904,169 +926,236 @@ void VocalRiserAudioProcessorEditor::paint (juce::Graphics& g)
               juce::Justification::centred, Ink::ink.withAlpha (0.7f));
 }
 
+// display con l'incavo per la pizza (stessa struttura dell'interfaccia originale)
+static juce::Path displayPath (juce::Rectangle<float> d, juce::Point<float> c, float notchR, float corner)
+{
+    juce::Path p;
+    const float yb = d.getBottom();
+    const float dy = c.y - yb;
+    const float dx = std::sqrt (juce::jmax (0.0f, notchR * notchR - dy * dy));
+    const float a  = std::asin (juce::jlimit (-1.0f, 1.0f, dx / notchR));
+    p.startNewSubPath (d.getX() + corner, d.getY());
+    p.lineTo (d.getRight() - corner, d.getY());
+    p.quadraticTo (d.getRight(), d.getY(), d.getRight(), d.getY() + corner);
+    p.lineTo (d.getRight(), yb - corner);
+    p.quadraticTo (d.getRight(), yb, d.getRight() - corner, yb);
+    p.lineTo (c.x + dx, yb);
+    p.addCentredArc (c.x, c.y, notchR, notchR, 0.0f, a, -a, false);
+    p.lineTo (d.getX() + corner, yb);
+    p.quadraticTo (d.getX(), yb, d.getX(), yb - corner);
+    p.lineTo (d.getX(), d.getY() + corner);
+    p.quadraticTo (d.getX(), d.getY(), d.getX() + corner, d.getY());
+    p.closeSubPath();
+    return p;
+}
+
 void VocalRiserAudioProcessorEditor::paintStatic (juce::Graphics& g)
 {
     using namespace juce;
     const auto b = getLocalBounds().toFloat();
-
-    // carta con qualche puntino, come un foglio di ricette
-    g.fillAll (Ink::paper);
+    const auto kc = amountKnob.getBounds().toFloat().getCentre();
+    const float notchR = (float) amountKnob.getWidth() * 0.5f + 10.0f;
+    const auto disp = displayArea.toFloat();
+    const auto dPath = displayPath (disp, kc, notchR, 16.0f);
     Random rng (11);
-    for (int i = 0; i < 420; ++i)
+
+    //------------------------------------------------------------------ fondo
+    if (riserThemeId == 2)
     {
-        g.setColour (Ink::ink.withAlpha (0.04f + 0.05f * rng.nextFloat()));
-        const float s = 0.8f + 1.4f * rng.nextFloat();
-        g.fillEllipse (rng.nextFloat() * b.getWidth(), rng.nextFloat() * b.getHeight(), s, s);
+        // tovaglia a quadretti, con sopra il menu di carta
+        g.fillAll (Colour (0xfffaf3e2));
+        const float sq = 18.0f;
+        for (float yy = 0; yy < b.getHeight(); yy += sq)
+            for (float xx = 0; xx < b.getWidth(); xx += sq)
+            {
+                const int ix = (int) (xx / sq), iy = (int) (yy / sq);
+                const float alpha = ((ix & 1) ? 0.45f : 0.0f) + ((iy & 1) ? 0.45f : 0.0f);
+                if (alpha > 0.0f) { g.setColour (Ink::tomato.withAlpha (alpha)); g.fillRect (xx, yy, sq, sq); }
+            }
+        auto card = b.reduced (14.0f);
+        sketchBox (g, card, 12.0f, Ink::paper, 2, 2.4f, 5.0f);
     }
+    else if (riserThemeId == 1)
     {
+        // ardesia con aloni di gesso, cornice di legno
+        g.fillAll (Ink::woodDark);
+        auto slate = b.reduced (12.0f);
+        g.setColour (Ink::paper);
+        g.fillRoundedRectangle (slate, 8.0f);
+        for (int i = 0; i < 26; ++i)
+        {
+            const float x = slate.getX() + rng.nextFloat() * slate.getWidth(), y = slate.getY() + rng.nextFloat() * slate.getHeight();
+            const float r = 20.0f + 50.0f * rng.nextFloat();
+            g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.035f), x, y, Colours::white.withAlpha (0.0f), x + r, y, true));
+            g.fillEllipse (x - r, y - r, r * 2, r * 2);
+        }
+        // venature della cornice
+        g.setColour (Colour (0xff8f6639).withAlpha (0.6f));
+        for (int i = 0; i < 40; ++i)
+        {
+            const float yy = rng.nextFloat() * b.getHeight();
+            g.drawHorizontalLine ((int) yy, 0.0f, 12.0f);
+            g.drawHorizontalLine ((int) yy, b.getRight() - 12.0f, b.getRight());
+            const float xx = rng.nextFloat() * b.getWidth();
+            g.drawVerticalLine ((int) xx, 0.0f, 12.0f);
+            g.drawVerticalLine ((int) xx, b.getBottom() - 12.0f, b.getBottom());
+        }
+        g.setColour (Colours::black.withAlpha (0.5f));
+        g.drawRoundedRectangle (slate, 8.0f, 2.0f);
+    }
+    else
+    {
+        // pagina del quaderno di ricette: righe azzurre e margine rosso
+        g.fillAll (Ink::paper);
+        g.setColour (Colour (0xff9cc3d9).withAlpha (0.45f));
+        for (float yy = 70.0f; yy < b.getHeight() - 10.0f; yy += 22.0f)
+            g.drawHorizontalLine ((int) yy, 10.0f, b.getRight() - 10.0f);
+        g.setColour (Ink::tomato.withAlpha (0.45f));
+        g.drawVerticalLine (30, 8.0f, b.getBottom() - 8.0f);
+        g.drawVerticalLine (33, 8.0f, b.getBottom() - 8.0f);
+        for (int i = 0; i < 300; ++i)
+        {
+            g.setColour (Ink::ink.withAlpha (0.03f + 0.04f * rng.nextFloat()));
+            const float s = 0.8f + 1.2f * rng.nextFloat();
+            g.fillEllipse (rng.nextFloat() * b.getWidth(), rng.nextFloat() * b.getHeight(), s, s);
+        }
         Path frame; frame.addRoundedRectangle (b.reduced (5.0f), 10.0f);
         sketch (g, frame, 1, 2.6f);
     }
 
-    // intestazione: cappello e titolo
-    chefHat (g, { 22.0f, 12.0f, 40.0f, 40.0f }, 4);
-    g.setFont (titleFont (38.0f));
-    handText (g, "Chef Riser", { 68.0f, 10.0f, 220.0f, 44.0f }, Justification::centredLeft);
-    g.setFont (handFont (17.0f));
-    handText (g, "riser vocali fatti in casa", { 236.0f, 24.0f, 220.0f, 24.0f }, Justification::centredLeft, Ink::ink.withAlpha (0.6f));
+    //------------------------------------------------------------------ intestazione
+    const float hx = riserThemeId == 0 ? 42.0f : 30.0f;
+    chefHat (g, { hx, 22.0f, 30.0f, 30.0f }, 4);
+    g.setFont (titleFont (31.0f));
+    handText (g, "Chef Riser", { hx + 36.0f, 18.0f, 180.0f, 38.0f }, Justification::centredLeft);
 
-    // pannelli
-    auto panel = [&] (Rectangle<int> r, Colour c, int seed)
+    //------------------------------------------------------------------ display
     {
-        const auto rf = r.toFloat();
-        sketchBox (g, rf, 9.0f, c, seed, 2.6f, 4.0f);
-        screw (g, { rf.getX() + 10.0f, rf.getY() + 10.0f }, seed);
-        screw (g, { rf.getRight() - 10.0f, rf.getY() + 10.0f }, seed + 1);
-        screw (g, { rf.getX() + 10.0f, rf.getBottom() - 10.0f }, seed + 2);
-        screw (g, { rf.getRight() - 10.0f, rf.getBottom() - 10.0f }, seed + 3);
-    };
-    auto plaque = [&] (Rectangle<int> panelR, const String& text, int seed)
-    {
-        auto pr = Rectangle<float> ((float) panelR.getCentreX() - 70.0f, (float) panelR.getY() + 12.0f, 140.0f, 30.0f);
-        sketchBox (g, pr, 6.0f, Ink::cream, seed, 2.0f, 2.5f);
-        g.setFont (handFont (21.0f, 0.06f));
-        handText (g, text, pr.translated (0.0f, -1.0f), Justification::centred);
-    };
+        g.setColour (Colours::black.withAlpha (0.25f));
+        g.fillPath (wobble (dPath, 0.8f, 50), AffineTransform::translation (3.0f, 4.0f));
 
-    panel (leftPanel, Ink::mint, 20);
-    panel (midPanel, Ink::navy, 30);
-    panel (rightPanel, Ink::butter, 40);
-
-    // farina sul pannello del forno
-    {
-        Random fl (5);
-        const auto mp = midPanel.toFloat().reduced (14.0f);
-        for (int i = 0; i < 90; ++i)
+        if (riserThemeId == 1)
         {
-            const float px = mp.getX() + fl.nextFloat() * mp.getWidth(), py = mp.getY() + fl.nextFloat() * mp.getHeight();
-            const float s = 1.0f + 2.6f * fl.nextFloat();
-            g.setColour (Ink::cream.withAlpha (0.2f + 0.45f * fl.nextFloat()));
-            Path q; q.addRectangle (-s * 0.5f, -s * 0.5f, s, s);
-            g.fillPath (q, AffineTransform::rotation (fl.nextFloat() * 3.0f).translated (px, py));
+            // riquadro di ardesia piu scura con cornicetta di gesso
+            g.setColour (Ink::paper.darker (0.35f));
+            g.fillPath (wobble (dPath, 0.8f, 50));
         }
-    }
-
-    plaque (leftPanel, "LA FRASE", 21);
-    plaque (midPanel, juce::CharPointer_UTF8 ("INTENSIT\xc3\x80"), 31);
-    plaque (rightPanel, "LA RICETTA", 41);
-
-    // tagliere sotto la forma d'onda
-    {
-        const auto br = boardArea.toFloat();
-        Path board;
-        board.addRoundedRectangle (br, 14.0f);
-        // manico a destra
-        Path handle;
-        handle.addRoundedRectangle (br.getRight() - 6.0f, br.getCentreY() - 13.0f, 24.0f, 26.0f, 9.0f);
-        g.setColour (Ink::ink.withAlpha (0.22f));
-        g.fillPath (wobble (board, 0.8f, 50), AffineTransform::translation (3.0f, 4.0f));
-        g.fillPath (wobble (handle, 0.6f, 51), AffineTransform::translation (3.0f, 4.0f));
-        g.setColour (Ink::wood);
-        g.fillPath (wobble (handle, 0.6f, 51));
-        sketch (g, handle, 51, 2.0f);
-        g.setGradientFill (ColourGradient (Ink::wood.brighter (0.12f), br.getX(), br.getY(), Ink::wood, br.getX(), br.getBottom(), false));
-        g.fillPath (wobble (board, 0.8f, 50));
-        // venature del legno
-        Random wv (9);
-        for (int i = 0; i < 7; ++i)
+        else if (riserThemeId == 2)
         {
-            const float yy = br.getY() + 14.0f + (br.getHeight() - 28.0f) * (float) i / 6.0f + (wv.nextFloat() - 0.5f) * 6.0f;
-            Path vein;
-            vein.startNewSubPath (br.getX() + 14.0f + wv.nextFloat() * 20.0f, yy);
-            vein.cubicTo (br.getX() + br.getWidth() * 0.35f, yy - 4.0f + wv.nextFloat() * 8.0f,
-                          br.getX() + br.getWidth() * 0.65f, yy - 4.0f + wv.nextFloat() * 8.0f,
-                          br.getRight() - 14.0f - wv.nextFloat() * 20.0f, yy);
-            g.setColour (Ink::woodDark.withAlpha (0.35f));
-            g.strokePath (vein, PathStrokeType (1.0f));
+            // il forno: smalto blu con un po' di farina
+            g.setColour (Ink::navy);
+            g.fillPath (wobble (dPath, 0.8f, 50));
+            Graphics::ScopedSaveState ss (g);
+            g.reduceClipRegion (dPath);
+            Random fl (5);
+            for (int i = 0; i < 110; ++i)
+            {
+                const float px = disp.getX() + fl.nextFloat() * disp.getWidth(), py = disp.getY() + fl.nextFloat() * disp.getHeight();
+                const float s = 1.0f + 2.4f * fl.nextFloat();
+                g.setColour (Colour (0xfffbf5e6).withAlpha (0.15f + 0.4f * fl.nextFloat()));
+                Path q; q.addRectangle (-s * 0.5f, -s * 0.5f, s, s);
+                g.fillPath (q, AffineTransform::rotation (fl.nextFloat() * 3.0f).translated (px, py));
+            }
         }
-        sketch (g, board, 50, 2.4f);
-        // foro del manico
-        g.setColour (Ink::mint);
-        g.fillEllipse (br.getRight() + 5.0f, br.getCentreY() - 4.0f, 8.0f, 8.0f);
-        g.setColour (Ink::ink);
-        g.drawEllipse (br.getRight() + 5.0f, br.getCentreY() - 4.0f, 8.0f, 8.0f, 1.4f);
+        else
+        {
+            // tagliere di legno
+            g.setGradientFill (ColourGradient (Ink::wood.brighter (0.12f), disp.getX(), disp.getY(), Ink::wood, disp.getX(), disp.getBottom(), false));
+            g.fillPath (wobble (dPath, 0.8f, 50));
+            Graphics::ScopedSaveState ss (g);
+            g.reduceClipRegion (dPath);
+            Random wv (9);
+            for (int i = 0; i < 10; ++i)
+            {
+                const float yy = disp.getY() + 12.0f + (disp.getHeight() - 24.0f) * (float) i / 9.0f + (wv.nextFloat() - 0.5f) * 6.0f;
+                Path vein;
+                vein.startNewSubPath (disp.getX() + 10.0f + wv.nextFloat() * 20.0f, yy);
+                vein.cubicTo (disp.getX() + disp.getWidth() * 0.35f, yy - 4.0f + wv.nextFloat() * 8.0f,
+                              disp.getX() + disp.getWidth() * 0.65f, yy - 4.0f + wv.nextFloat() * 8.0f,
+                              disp.getRight() - 10.0f - wv.nextFloat() * 20.0f, yy);
+                g.setColour (Ink::woodDark.withAlpha (0.35f));
+                g.strokePath (vein, PathStrokeType (1.0f));
+            }
+        }
+        sketch (g, dPath, 50, 2.5f);
     }
 
-    // separatore nella ricetta, sopra gli effetti
+    //------------------------------------------------------------------ sotto la pizza
+    g.setFont (handFont (16.0f, 0.1f));
+    handText (g, juce::CharPointer_UTF8 ("INTENSIT\xc3\x80"), intensityArea.toFloat().withHeight (16.0f),
+              Justification::centred, Ink::ink.withAlpha (0.7f));
+
+    // separatore sopra gli effetti
     {
-        const float yy = (float) fxBtns[0].getY() - 6.0f;
-        Path sep; sep.startNewSubPath ((float) rightPanel.getX() + 18.0f, yy); sep.lineTo ((float) rightPanel.getRight() - 18.0f, yy);
-        sketch (g, sep, 61, 1.6f, Ink::ink.withAlpha (0.6f), false);
+        const float yy = (float) fxBtns[0].getY() - 8.0f;
+        Path sep; sep.startNewSubPath (40.0f, yy); sep.lineTo (b.getRight() - 40.0f, yy);
+        sketch (g, sep, 61, 1.6f, Ink::ink.withAlpha (0.5f), false);
     }
 
-    // firma
-    chefHat (g, { 22.0f, b.getBottom() - 34.0f, 22.0f, 22.0f }, 8);
-    g.setFont (handFont (17.0f, 0.14f));
-    handText (g, "CHEF CATTA", { 50.0f, b.getBottom() - 33.0f, 120.0f, 22.0f }, Justification::centredLeft);
-    g.setFont (handFont (17.0f, 0.04f));
-    handText (g, "dsp", { 140.0f, b.getBottom() - 33.0f, 40.0f, 22.0f }, Justification::centredLeft, Ink::ink.withAlpha (0.6f));
-   #ifdef JucePlugin_VersionString
-    handText (g, String ("v") + JucePlugin_VersionString, { b.getRight() - 120.0f, b.getBottom() - 33.0f, 98.0f, 22.0f },
-              Justification::centredRight, Ink::ink.withAlpha (0.5f));
-   #endif
+    //------------------------------------------------------------------ firma
+    // in una targhetta centrata tra gli effetti e il bordo in basso
+    {
+        g.setFont (handFont (17.0f, 0.14f));
+        const float tw = GlyphArrangement::getStringWidth (g.getCurrentFont(), "CHEF CATTA");
+        g.setFont (handFont (17.0f, 0.04f));
+        const float dw = GlyphArrangement::getStringWidth (g.getCurrentFont(), "dsp");
+        const float hatW = 24.0f, gap1 = 8.0f, gap2 = 6.0f, padX = 16.0f;
+        const float total = hatW + gap1 + tw + gap2 + dw;
+        const float areaTop = (float) fxBtns[0].getBottom() + 6.0f;
+        const float areaBot = b.getBottom() - (riserThemeId == 0 ? 8.0f : 16.0f);
+        const float plateH = 36.0f;
+        auto plate = Rectangle<float> (b.getCentreX() - total * 0.5f - padX, (areaTop + areaBot - plateH) * 0.5f,
+                                       total + padX * 2.0f, plateH);
+        sketchBox (g, plate, 9.0f, Ink::cream, 77, 1.8f, 2.5f);
+        float x = plate.getX() + padX;
+        const float y = plate.getCentreY() - 12.0f;
+        chefHat (g, { x, y - 1.0f, hatW, hatW }, 8);
+        x += hatW + gap1;
+        g.setFont (handFont (17.0f, 0.14f));
+        handText (g, "CHEF CATTA", { x, y, tw + 4.0f, 24.0f }, Justification::centredLeft);
+        x += tw + gap2;
+        g.setFont (handFont (17.0f, 0.04f));
+        handText (g, "dsp", { x, y, dw + 4.0f, 24.0f }, Justification::centredLeft, Ink::ink.withAlpha (0.6f));
+    }
 }
 
 void VocalRiserAudioProcessorEditor::resized()
 {
     bgCache = {};
+    const int W = getWidth();
+    const int inset = riserThemeId == 0 ? 20 : 26;
 
     // intestazione: SALVA e RESET a destra
-    saveBtn.setBounds (getWidth() - 214, 16, 96, 36);
-    resetBtn.setBounds (getWidth() - 112, 16, 96, 36);
+    resetBtn.setBounds (W - inset - 92, 18, 92, 36);
+    saveBtn.setBounds (W - inset - 92 - 96, 18, 92, 36);
 
-    // tre pannelli
-    const int top = 64, bottom = getHeight() - 44;
-    leftPanel  = { 16, top, 280, bottom - top };
-    midPanel   = { 306, top, 222, bottom - top };
-    rightPanel = { 538, top, 166, bottom - top };
-
-    // LA FRASE: tagliere con la forma d'onda, poi CATTURA e LOOP
-    boardArea = { leftPanel.getX() + 18, leftPanel.getY() + 60, leftPanel.getWidth() - 50, 168 };
-    wave.setBounds (boardArea.reduced (14, 14));
-    const int by = boardArea.getBottom() + 18;
-    captureBtn.setBounds (leftPanel.getX() + 16, by, 122, 42);
-    loopBtn.setBounds (leftPanel.getRight() - 138, by, 122, 42);
-
-    // INTENSITA: la pizza
+    // display con la forma d'onda; CATTURA e LOOP negli angoli in basso
+    displayArea = { inset + 2, 64, W - 2 * inset - 4, 236 };
     const int ks = 196;
-    amountKnob.setBounds (midPanel.getCentreX() - ks / 2, midPanel.getY() + 50, ks, ks);
-    intensityArea = { midPanel.getCentreX() - 60, amountKnob.getBottom() + 8, 120, 32 };
+    amountKnob.setBounds (W / 2 - ks / 2, displayArea.getBottom() - 78, ks, ks);
+    wave.setBounds (displayArea.getX() + 18, displayArea.getY() + 16, displayArea.getWidth() - 36, 128);
+    const int cy = displayArea.getBottom() - 44;
+    captureBtn.setBounds (displayArea.getX() + 8, cy, 104, 38);
+    loopBtn.setBounds (displayArea.getRight() - 112, cy, 104, 38);
 
-    // LA RICETTA: durata, immagine, effetti
-    auto rc = rightPanel.reduced (14, 0);
-    lengthSel.setBounds (rc.getX(), rightPanel.getY() + 52, rc.getWidth(), 52);
-    imageTitleArea = { rc.getX(), lengthSel.getBottom() + 6, rc.getWidth(), 15 };
-    stereoBtn.setBounds (rc.getX(), imageTitleArea.getBottom(), rc.getWidth(), 38);
+    intensityArea = { W / 2 - 60, amountKnob.getBottom() - 4, 120, 46 };
 
-    int fy = stereoBtn.getBottom() + 16;
-    for (auto& fb : fxBtns)
-    {
-        fb.setBounds (rc.getX(), fy, rc.getWidth(), 30);
-        fy += 32;
-    }
-    // la freccia del menu stutter sta a destra della riga STUTTER
+    // DURATA e IMMAGINE
+    const int sy = intensityArea.getBottom() + 6;
+    lengthSel.setBounds (W / 2 - 190, sy, 170, 54);
+    imageTitleArea = { W / 2 + 20, sy, 170, 15 };
+    stereoBtn.setBounds (W / 2 + 20, sy + 15, 170, 40);
+
+    // effetti in fila
+    const int fy = stereoBtn.getBottom() + 26;
+    const int fw = (W - 2 * inset - 20) / 3;
+    for (int i = 0; i < 3; ++i)
+        fxBtns[(size_t) i].setBounds (inset + 10 + i * fw, fy, fw, 32);
+    // la freccia del menu sta subito dopo la scritta STUTTER
     const auto sb = fxBtns[1].getBounds();
-    stutMenuBtn.setBounds (sb.getRight() - 26, sb.getY() + 3, 24, 24);
+    const float tw = juce::GlyphArrangement::getStringWidth (handFont (19.0f, 0.06f), "STUTTER");
+    const int chevX = juce::roundToInt ((float) sb.getCentreX() + (13.0f + 8.0f + tw) * 0.5f + 4.0f);
+    stutMenuBtn.setBounds (chevX, sb.getY() + 4, 24, 24);
 
     if (stutPopup.isVisible()) showStutterMenu (true);
 }

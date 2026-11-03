@@ -128,9 +128,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout VocalRiserAudioProcessor::cr
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "filterOn", 1 }, "Filtro",  true));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stutOn", 1 },   "Stutter", true));
     p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "phoneOn", 1 },  "Phone",   false));
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stereoOn", 1 }, "Mono -> Stereo", false));
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "stereoOn", 1 }, "Mono -> Stereo", true));
     p.push_back (std::make_unique<AudioParameterChoice> (ParameterID { "stutRate", 1 }, "Timing Stutter",
-                                                         StringArray { "1/4", "1/8", "1/16" }, 2));
+                                                         StringArray { "1/4", "1/8", "1/16", "1/32" }, 2));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "stutDepth", 1 }, "Quantita Stutter",
                                                         NormalisableRange<float> (0.0f, 1.0f), 0.5f,
                                                         AudioParameterFloatAttributes().withStringFromValueFunction (
@@ -616,8 +616,8 @@ void VocalRiserAudioProcessor::renderRiser()
     const float stutAmt  = pStutDepth->load();
     const float fMax     = 200.0f * std::pow (10.0f, amount);   // 200 Hz -> 2 kHz
     const float volRange = 4.0f + 14.0f * amount;
-    static constexpr double stutDiv[] = { 1.0, 0.5, 0.25 };   // 1/4, 1/8, 1/16
-    const double stutPeriod = secPerBeat * rate * stutDiv[jlimit (0, 2, (int) pStutRate->load())];
+    static constexpr double stutDiv[] = { 1.0, 0.5, 0.25, 0.125 };   // 1/4, 1/8, 1/16, 1/32
+    const double stutPeriod = secPerBeat * rate * stutDiv[jlimit (0, 3, (int) pStutRate->load())];
 
     // Stutter: QUANTITA regola quanto scende il volume nelle pause.
     // 0 % = -5 dB, 100 % = silenzio. Attacco e rilascio morbidi: niente click anche al 100 %.

@@ -3,6 +3,8 @@
 #include "PluginProcessor.h"
 
 // Interfaccia "disegnata a mano", a tema cucina: la manopola dell'intensita e una pizza.
+extern int riserThemeId;   // variante grafica
+
 class RiserLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -133,7 +135,7 @@ private:
     std::vector<std::unique_ptr<ButtonAtt>> buttonAtts;
 
     // zone del pannello
-    juce::Rectangle<int> leftPanel, midPanel, rightPanel, boardArea, intensityArea, imageTitleArea;
+    juce::Rectangle<int> displayArea, intensityArea, imageTitleArea;
     bool lastPreviewPlaying = false;
     int lastSourceStereo = -2;
 
